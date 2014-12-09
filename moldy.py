@@ -1,6 +1,8 @@
 import numpy as np
 from math import degrees, radians
 
+from scipy.stats import gmean
+
 from periodictable import *
 import periodictableGUI
 
@@ -9,7 +11,11 @@ import csv
 import itertools
 
 import sys
- 
+
+from os.path import expanduser
+
+from prettytable import PrettyTable
+
 # SIP allows us to select the API we wish to use
 import sip
  
@@ -118,6 +124,21 @@ def zmat2xyz(data):
     zvals = list(flatten([ [row[2], [ radians(cell) for cell in row[4::2]]] for row in data[1:] ]))
     return ZMat(zslots)(zvals)
 
+def writeOutput(data, fileName):
+    t = PrettyTable()
+    maxLen = max([len(row) for row in data])
+    for row in data:
+        l = len(row)
+        if l < maxLen:
+            row += [""] * (maxLen - l)
+        t.add_row(row)
+    t.align = "l"
+    t.header = False
+    t.border = False
+    with open(fileName, 'w') as f:
+        f.write(str(t))
+    f.close()
+
 # Every Qt application must have one and only one QApplication object;
 # it receives the command line arguments passed to the script, as they
 # can be used to customize the application's appearance and behavior
@@ -168,15 +189,9 @@ class Widget(QWidget):
         self.window = gl.GLViewWidget()
         self.window.installEventFilter(self)
         self.window.setMinimumSize(500, 500)
-        for i in range(nelems):
-            addAtom(self.window, i)
+        self.updateView()
 
-        combs = itertools.combinations(range(nelems), 2)
-        for i in combs:
-            addBond(self.window, i[0], i[1])
-
-        #print(self.window.items)
-        #self.window.addItem(zgrid)
+        self.fileDialog = QtGui.QFileDialog(self)
 
         self.layout = QtGui.QHBoxLayout(self)
         self.left = QtGui.QVBoxLayout()
@@ -214,6 +229,7 @@ class Widget(QWidget):
 
     def addRow(self):
         print ('add row')
+        self.model.dataChanged.disconnect(self.updateView)
         row = self.model.rowCount()
         self.model.insertRow(row)
         if row < 3:
@@ -221,7 +237,8 @@ class Widget(QWidget):
                 self.model.setItem(row, j, QStandardItem())
                 self.model.item(row, j).setBackground(QtGui.QColor(150,150,150))
                 self.model.item(row, j).setFlags(Qt.ItemIsEnabled)
-        self.updateView()
+        self.model.dataChanged.connect(self.updateView)
+        #self.updateView()
 
     def deleteRow(self):
         print ('delete row')
@@ -229,15 +246,17 @@ class Widget(QWidget):
         self.updateView()
 
     def periodicTable(self):
-        #global selection
         print('periodicTable')
         self.periodicTableWidget.exec_()
         selection = self.periodicTableWidget.selection()
+        print(selection)
         return selection
 
     def writeZmat(self):
         print ('write zmat')
         print(model2list(self.model))
+        fileName = self.fileDialog.getSaveFileName(self, "Save file", expanduser("~"), "*.zmat;;*.*")
+        writeOutput(model2list(self.model), fileName)
 
     def writeXYZ(self):
         print ('write xyz')
@@ -247,12 +266,15 @@ class Widget(QWidget):
             xyz.append(np.round(v[i], 7).tolist())
             xyz[i][:0] = modelList[i][0]
         print(xyz)
+        fileName = self.fileDialog.getSaveFileName(self, "Save file", expanduser("~"), "*.xyz;;*.*")
+        writeOutput(xyz, fileName)
 
     def updateView(self):
         global r
         global c
         global v
         global vs
+        global elems
         global nelems
         print ('update view')
         data = model2list(self.model)
@@ -306,15 +328,22 @@ class Widget(QWidget):
                             self.buildList.append(i)
                             print(self.buildList)
                         if len(self.buildList) == min(3, nelems):
-                            self.model.dataChanged.disconnect(self.updateView)
                             selection = self.periodicTable()
                             self.addRow()
+                            self.model.dataChanged.disconnect(self.updateView)
                             row = self.model.rowCount()-1
                             newSymbol = selection[1]
-                            newBond = 3*np.mean([elements[e].covalent_radius for e in [selection[0], self.buildList[0]]])
-                            newAngle = 120.
-                            newDihedral = 180.
-                            for j, cell in enumerate([newSymbol, self.buildList[0]+1, newBond, self.buildList[1]+1, newAngle, self.buildList[2]+1, newDihedral]):
+                            newBond = 2.1*gmean([elements[e].covalent_radius for e in [selection[0], elems[self.buildList[0]]]])
+                            newData = [newSymbol, self.buildList[0]+1, newBond]
+                            if len(self.buildList) >= 2:
+                                newAngle = 120.
+                                newData.append(self.buildList[1]+1)
+                                newData.append(newAngle)
+                                if len(self.buildList) == 3:
+                                    newDihedral = 180.
+                                    newData.append(self.buildList[2]+1)
+                                    newData.append(newDihedral)
+                            for j, cell in enumerate(newData):
                                 item = QStandardItem(str(cell))
                                 self.model.setItem(row, j, item)
                             self.buildList = []
@@ -336,18 +365,6 @@ inp = [['H'],
         ['O', 2, 1.4, 1, 105.],
         ['H', 3, 0.9, 2, 105., 1, 120.]]
 
-v = zmat2xyz(inp)
-shift = np.mean(v, axis=0)
-vs = np.add(v, -shift)
-
-elems = [ 1 + next((i for i, sublist in enumerate(barve) if row[0] in sublist), -1) for row in inp ]
-nelems = len(elems)
-
-r = []
-c = []
-for i in elems:
-    r.append(elements[i].covalent_radius)
-    c.append(barve[i-1][-1])
 # Create an instance of the application window and run it
 app = Widget()
 app.run()

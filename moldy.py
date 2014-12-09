@@ -2,6 +2,7 @@ import numpy as np
 from math import degrees, radians
 
 from periodictable import *
+import periodictableGUI
 
 import csv
 
@@ -38,17 +39,18 @@ with open('barve.csv') as csvfile:
 #print(barve)
 
 def addAtom(w, i, opt=''):
-    r2 = r[i]**1.3*.7
+    #r2 = r[i]**1.3*.7
+    r2 = r[i]*.7
     if opt == 'highlight':
-        r2 += .2
+        r2 += .15
     ms = gl.MeshData.sphere(rows=10, cols=20, radius=r2)
-    gs = gl.GLMeshItem(meshdata=ms, smooth=True, drawFaces=True, color=(c[i] if opt != 'highlight' else (1, 0, 0, .5)), drawEdges=False, shader='shaded', glOptions=('opaque' if opt != 'highlight' else 'translucent'))
+    gs = gl.GLMeshItem(meshdata=ms, smooth=True, drawFaces=True, color=(c[i] if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, shader='shaded', glOptions=('opaque' if opt != 'highlight' else 'translucent'))
     gs.translate(vs[i][0], vs[i][1], vs[i][2])
     w.addItem(gs)
 
 def addBond(w, i, j):
     l = np.linalg.norm(np.array(vs[i])-np.array(vs[j]))
-    if l < (r[i]+r[j])*1.5:
+    if l < (r[i]+r[j])*1.3:
         xyz = np.subtract(vs[j], vs[i])
         xy = xyz[0]**2 + xyz[1]**2
         # for elevation angle defined from Z-axis down
@@ -131,11 +133,13 @@ class Widget(QWidget):
         self.inputField.setModel(self.model)
         #self.inputField.setColumnCount(7)
         #self.inputField.setRowCount(len(inp))
-        self.inputField.setFixedWidth(325)
+        self.inputField.setMinimumWidth(325)
         self.model.setHorizontalHeaderLabels(['atom','','bond','','angle','','dihedral'])
         self.populateTable()
 
-        for j, width in enumerate([40, 20, 65, 20, 65, 20, 65]):
+        self.periodicTableWidget = periodictableGUI.PeriodicTableDialog()
+
+        for j, width in enumerate([40, 22, 65, 22, 65, 22, 65]):
             self.inputField.setColumnWidth(j, width)
         for i in range(min(len(inp), 3)):
             for j in range(2*i+1, 7):
@@ -148,6 +152,9 @@ class Widget(QWidget):
 
         self.deleteRowButton = QtGui.QPushButton('Delete row', self)
         self.deleteRowButton.clicked.connect(self.deleteRow)
+
+        self.periodicTableButton = QtGui.QPushButton('periodicTable', self)
+        self.periodicTableButton.clicked.connect(self.periodicTable)
 
         #self.updateViewButton = QtGui.QPushButton('Update view', self)
         #self.updateViewButton.clicked.connect(self.updateView)
@@ -178,7 +185,7 @@ class Widget(QWidget):
         self.leftBot2 = QtGui.QHBoxLayout()
         self.leftBot.addWidget(self.addRowButton)
         self.leftBot.addWidget(self.deleteRowButton)
-        #self.leftBot.addWidget(self.updateViewButton)
+        self.leftBot.addWidget(self.periodicTableButton)
         self.leftBot2.addWidget(self.writeZmatButton)
         self.leftBot2.addWidget(self.writeXYZButton)
         #hbox.addStretch(1)
@@ -191,15 +198,13 @@ class Widget(QWidget):
         self.setWindowTitle('Moldy')
 
         self.model.dataChanged.connect(self.updateView)
+        self.buildList = []
 
     def run(self):
         # Show the form
         self.show()
         # Run the Qt application
         qt_app.exec_()
-
-    def test(self):
-        print("test")
 
     def populateTable(self):
         for i, row in enumerate(inp):
@@ -216,10 +221,19 @@ class Widget(QWidget):
                 self.model.setItem(row, j, QStandardItem())
                 self.model.item(row, j).setBackground(QtGui.QColor(150,150,150))
                 self.model.item(row, j).setFlags(Qt.ItemIsEnabled)
+        self.updateView()
 
     def deleteRow(self):
         print ('delete row')
         self.model.removeRow(self.model.rowCount()-1)
+        self.updateView()
+
+    def periodicTable(self):
+        #global selection
+        print('periodicTable')
+        self.periodicTableWidget.exec_()
+        selection = self.periodicTableWidget.selection()
+        return selection
 
     def writeZmat(self):
         print ('write zmat')
@@ -239,15 +253,14 @@ class Widget(QWidget):
         global c
         global v
         global vs
+        global nelems
         print ('update view')
         data = model2list(self.model)
         print(data)
 
         v = zmat2xyz(data)
         shift = np.mean(v, axis=0)
-        vs = []
-        for vi in v:
-            vs.append(np.add(vi, -shift))
+        vs = np.add(v, -shift)
 
         elems = [ 1 + next((i for i, sublist in enumerate(barve) if row[0] in sublist), -1) for row in data ]
         nelems = len(elems)
@@ -278,18 +291,39 @@ class Widget(QWidget):
         # Here we just check if its one of the layout widgets
         if self.layout.indexOf(obj) != -1:
             if event.type() == event.MouseButtonPress:
-                #print("click")
+                #print('click')
                 allItems = obj.items
-                itms = obj.itemsAt((event.pos().x()-5, event.pos().y()-5, 10, 10))
+                itms = obj.itemsAt((event.pos().x()-2, event.pos().y()-2, 4, 4))
                 if len(itms) > 0:
                     #verts = obj[0].opts['meshdata'].vertexes()
                     #verts[0][-1]
                     i = allItems.index(itms[0])
-                    print('Pressed button', event.button(), 'at', (event.pos().x(), event.pos().y()), 'item:', i)
+                    e = self.model.index(i, 0).data()
+                    print('Pressed button', event.button(), 'at', (event.pos().x(), event.pos().y()), 'item:', e, i+1, 'nelems:', nelems)
                     if i < nelems:
                         addAtom(obj, i, 'highlight')
+                        if len(self.buildList) < min(3, nelems):
+                            self.buildList.append(i)
+                            print(self.buildList)
+                        if len(self.buildList) == min(3, nelems):
+                            self.model.dataChanged.disconnect(self.updateView)
+                            selection = self.periodicTable()
+                            self.addRow()
+                            row = self.model.rowCount()-1
+                            newSymbol = selection[1]
+                            newBond = 3*np.mean([elements[e].covalent_radius for e in [selection[0], self.buildList[0]]])
+                            newAngle = 120.
+                            newDihedral = 180.
+                            for j, cell in enumerate([newSymbol, self.buildList[0]+1, newBond, self.buildList[1]+1, newAngle, self.buildList[2]+1, newDihedral]):
+                                item = QStandardItem(str(cell))
+                                self.model.setItem(row, j, item)
+                            self.buildList = []
+                            self.model.dataChanged.connect(self.updateView)
+                            self.updateView()
                     if i >= len(allItems)-1:
                         obj.removeItem(itms[0])
+                        self.buildList.pop()
+                        print(self.buildList)
                 # if I returned True right here, the event
                 # would be filtered and not reach the obj,
                 # meaning that I decided to handle it myself
@@ -304,9 +338,7 @@ inp = [['H'],
 
 v = zmat2xyz(inp)
 shift = np.mean(v, axis=0)
-vs = []
-for vi in v:
-    vs.append(np.add(vi, -shift))
+vs = np.add(v, -shift)
 
 elems = [ 1 + next((i for i, sublist in enumerate(barve) if row[0] in sublist), -1) for row in inp ]
 nelems = len(elems)

@@ -13,82 +13,83 @@ total_mass = 0
 cartesian = []
 zmatrix = []
 
-def read_zmatrix(  input_file='zmatrix.dat' ):
+def read_zmatrix( input_file='zmatrix.dat'):
       '''Read the input zmatrix file (assumes no errors and no variables)'''
       '''The zmatrix is a list with each element formatted as follows
       [ name, [[ atom1, distance ], [ atom2, angle ], [ atom3, dihedral ]], mass ]
       The first three atoms have blank lists for the undefined coordinates'''
       zmatrix = []
-      with open( input_file, 'r' ) as f:
+      with open(input_file, 'r') as f:
             f.readline()
             f.readline()
             name = f.readline().strip()
-            zmatrix.append( [ name, [], masses[name] ] )
+            zmatrix.append([ name, [], masses[name] ])
             name, atom1, distance = f.readline().split()[:3]
-            zmatrix.append( [ name,
+            zmatrix.append([ name,
                                              [ [int(atom1) - 1, float(distance)], [], [] ],
-                                             masses[name] ] )
+                                             masses[name] ])
             name, atom1, distance, atom2, angle = f.readline().split()[:5]
-            zmatrix.append( [ name,
+            zmatrix.append([ name,
                                              [[ int(atom1) - 1, float(distance) ],
-                                              [int(atom2) - 1, m.radians( float(angle) ) ], []],
-                                             masses[name] ] )
+                                              [int(atom2) - 1, m.radians(float(angle)) ], []],
+                                             masses[name] ])
             for line in f.readlines():
                   # Get the components of each line, dropping anything extra
                   name, atom1, distance, atom2, angle, atom3, dihedral = line.split()[:7]
                   # convert to a base 0 indexing system and use radians
                   atom = [ name,
                               [ [int(atom1) - 1, float(distance) ],
-                                [int(atom2) - 1, m.radians( float(angle) ) ],
-                                [int(atom3) - 1, m.radians( float(dihedral) ) ] ],
+                                [int(atom2) - 1, m.radians(float(angle)) ],
+                                [int(atom3) - 1, m.radians(float(dihedral)) ] ],
                               masses[name] ]
-                  zmatrix.append( atom )
+                  zmatrix.append(atom)
 
       return zmatrix
 
-def read_cartesian( data):
+def read_cartesian(data):
       '''Read the cartesian coordinates file (assumes no errors)'''
       '''The cartesian coordiantes consist of a list of atoms formatted as follows
-      [ name, np.array( [ x, y, z ] ), mass ]
+      [ name, np.array([ x, y, z ]), mass ]
       '''
       cartesian = []
       for coords in data:
-            name = coords[0]
-            position = []
-            for i in coords[1:4]:
-                  position.append( float(i) )
-            cartesian.append( [name, np.array( position ), masses[name]] )
+            if len(coords) == 4:
+                  name = coords[0]
+                  position = []
+                  for i in coords[1:4]:
+                        position.append(float(i))
+                  cartesian.append([name, np.array(position), masses[name]])
 
       return cartesian
 
-def rotation_matrix(  axis, angle ):
+def rotation_matrix(axis, angle):
       '''Euler-Rodrigues formula for rotation matrix'''
       # Normalize the axis
       axis = axis/np.sqrt(np.dot(axis,axis))
-      a = np.cos( angle/2 )
+      a = np.cos(angle/2)
       b,c,d = -axis*np.sin(angle/2)
-      return np.array( [[a*a+b*b-c*c-d*d, 2*(b*c-a*d), 2*(b*d+a*c)],
+      return np.array([[a*a+b*b-c*c-d*d, 2*(b*c-a*d), 2*(b*d+a*c)],
                               [2*(b*c+a*d), a*a+c*c-b*b-d*d, 2*(c*d-a*b)],
-                              [2*(b*d-a*c), 2*(c*d+a*b), a*a+d*d-b*b-c*c]] )
+                              [2*(b*d-a*c), 2*(c*d+a*b), a*a+d*d-b*b-c*c]])
 
-def add_first_three_to_cartesian( ):
+def add_first_three_to_cartesian():
       '''The first three atoms in the zmatrix need to be treated differently'''
       # First atom
       name, coords, mass = zmatrix[0]
-      cartesian = [[ name, np.array( [0, 0, 0] ), mass ]]
+      cartesian = [[ name, np.array([0, 0, 0]), mass ]]
 
       # Second atom
       name, coords, mass = zmatrix[1]
       distance = coords[0][1]
-      cartesian.append( [ name, np.array( [distance, 0, 0] ), masses[name] ] )
+      cartesian.append([ name, np.array([distance, 0, 0]), masses[name] ])
 
       # Third atom
       name, coords, mass =  zmatrix[2]
       atom1, atom2 = coords[:2]
       atom1, distance = atom1
       atom2, angle = atom2
-      q = np.array( cartesian[atom1][1] ) # position of atom 1
-      r = np.array( cartesian[atom2][1] ) # position of atom 2
+      q = np.array(cartesian[atom1][1]) # position of atom 1
+      r = np.array(cartesian[atom2][1]) # position of atom 2
 
       # Vector pointing from q to r
       a = r - q
@@ -97,14 +98,14 @@ def add_first_three_to_cartesian( ):
       d = distance*a/np.sqrt(np.dot(a,a))
 
       # Rotate d by the angle around the z-axis
-      d = np.dot( rotation_matrix( [0,0,1], angle ), d )
+      d = np.dot(rotation_matrix([0,0,1], angle), d)
 
       # Add d to the position of q to get the new coordinates of the atom
       p = q + d
       atom = [ name, p, masses[name] ]
-      cartesian.append( atom )
+      cartesian.append(atom)
 
-def add_atom_to_cartesian(  coords ):
+def add_atom_to_cartesian( coords):
       '''Find the cartesian coordinates of the atom'''
       name, coords, mass = coords
       atom1, distance = coords[0]
@@ -124,26 +125,26 @@ def add_atom_to_cartesian(  coords ):
       d = distance*a/np.sqrt(np.dot(a,a))
 
       # Vector normal to plane defined by q,r,s
-      normal = np.cross( a, b )
+      normal = np.cross(a, b)
       # Rotate d by the angle around the normal to the plane defined by q,r,s
-      d = np.dot( rotation_matrix( normal, angle ), d )
+      d = np.dot(rotation_matrix(normal, angle), d)
 
       # Rotate d around a by the dihedral
-      d = np.dot( rotation_matrix( a, dihedral ), d )
+      d = np.dot(rotation_matrix(a, dihedral), d)
 
       # Add d to the position of q to get the new coordinates of the atom
       p = q + d
       atom = [ name, p, mass ]
 
-      cartesian.append( atom )
+      cartesian.append(atom)
 
-def zmatrix_to_cartesian( ):
+def zmatrix_to_cartesian():
       '''Convert the zmartix to cartesian coordinates'''
       # Deal with first three line separately
       add_first_three_to_cartesian()
 
-      for i in range( 3, len(zmatrix) ):
-            add_atom_to_cartesian( zmatrix[i] )
+      for i in range(3, len(zmatrix)):
+            add_atom_to_cartesian(zmatrix[i])
 
       remove_dummy_atoms()
 
@@ -162,7 +163,7 @@ def add_first_three_to_zmatrix(data):
       atom1 = data[0]
       pos1 = atom1[1]
       q = pos1 - position
-      distance = m.sqrt( np.dot( q, q ) )
+      distance = m.sqrt(np.dot(q, q))
       second = [name, [[1,distance],[],[]], mass]
 
       # Third atom
@@ -171,16 +172,16 @@ def add_first_three_to_zmatrix(data):
       pos1, pos2 = atom1[1], atom2[1]
       q = pos1 - position
       r = pos2 - pos1
-      q_u = q / np.sqrt( np.dot( q, q ) )
-      r_u = r / np.sqrt( np.dot( r, r ) )
-      distance = np.sqrt( np.dot( q, q ) )
-      # Angle between a and b = acos( dot product of the unit vectors )
-      angle = m.acos( np.dot( -q_u, r_u ) )
-      third = [name, [ [ 1, distance ], [ 2, np.degrees( angle ) ], [] ], mass ]
+      q_u = q / np.sqrt(np.dot(q, q))
+      r_u = r / np.sqrt(np.dot(r, r))
+      distance = np.sqrt(np.dot(q, q))
+      # Angle between a and b = acos(dot product of the unit vectors)
+      angle = m.acos(np.dot(-q_u, r_u))
+      third = [name, [ [ 1, distance ], [ 2, np.degrees(angle) ], [] ], mass ]
 
       return [first, second, third]
 
-def add_atom_to_zmatrix( i, line, data ):
+def add_atom_to_zmatrix(i, line, data):
       '''Generates an atom for the zmatrix
       (assumes that three previous atoms have been placed in the cartesian coordiantes)'''
       name, position, mass = line
@@ -190,24 +191,24 @@ def add_atom_to_zmatrix( i, line, data ):
       q = pos1 - position
       r = pos2 - pos1
       s = pos3 - pos2
-      position_u = position / np.sqrt( np.dot( position, position ) )
+      position_u = position / np.sqrt(np.dot(position, position))
       # Create unit vectors
-      q_u = q / np.sqrt( np.dot( q, q ) )
-      r_u = r / np.sqrt( np.dot( r, r ) )
-      s_u = s / np.sqrt( np.dot( s, s ) )
-      distance = np.sqrt( np.dot( q, q ) )
-      # Angle between a and b = acos( dot( a, b ) / ( |a| |b| ) )
-      angle = m.acos( np.dot( -q_u, r_u ) )
-      angle_123 = m.acos( np.dot( -r_u, s_u ) )
-      # Dihedral angle = acos( dot( normal_vec1, normal_vec2 ) / ( |normal_vec1| |normal_vec2| ) )
-      plane1 = np.cross( q, r )
-      plane2 = np.cross( r, s )
-      dihedral = m.acos( np.dot( plane1, plane2 ) / ( np.sqrt( np.dot( plane1, plane1 ) ) * np.sqrt( np.dot( plane2, plane2 ) ) ) )
+      q_u = q / np.sqrt(np.dot(q, q))
+      r_u = r / np.sqrt(np.dot(r, r))
+      s_u = s / np.sqrt(np.dot(s, s))
+      distance = np.sqrt(np.dot(q, q))
+      # Angle between a and b = acos(dot(a, b) / (|a| |b|))
+      angle = m.acos(np.dot(-q_u, r_u))
+      angle_123 = m.acos(np.dot(-r_u, s_u))
+      # Dihedral angle = acos(dot(normal_vec1, normal_vec2) / (|normal_vec1| |normal_vec2|))
+      plane1 = np.cross(q, r)
+      plane2 = np.cross(r, s)
+      dihedral = m.acos(np.dot(plane1, plane2) / (np.sqrt(np.dot(plane1, plane1)) * np.sqrt(np.dot(plane2, plane2))))
       # Convert to signed dihedral angle
-      if np.dot( np.cross( plane1, plane2 ), r_u ) < 0:
+      if np.dot(np.cross(plane1, plane2), r_u) < 0:
             dihedral = -dihedral
 
-      coords = [ [1, distance],[2, np.degrees( angle )],[3, np.degrees( dihedral )] ]
+      coords = [ [1, distance],[2, np.degrees(angle)],[3, np.degrees(dihedral)] ]
       atom = [ name, coords, mass ]
 
       return atom
@@ -218,24 +219,24 @@ def cartesian_to_zmatrix(data):
       firstThree = add_first_three_to_zmatrix(data)
       for i in range(3):
             zmatrix.append(firstThree[i])
-      for i in range( 3, len(data) ):
+      for i in range(3, len(data)):
             line = data[i]
-            zmatrix.append(add_atom_to_zmatrix( i+1, line, data ))
+            zmatrix.append(add_atom_to_zmatrix(i+1, line, data))
 
       return zmatrix
 
-def remove_dummy_atoms( ):
+def remove_dummy_atoms():
       '''Delete any dummy atoms that may have been placed in the calculated cartesian coordinates'''
       new_cartesian = []
       for line in cartesian:
             if not line[0] == 'X':
-                  new_cartesian.append( line )
+                  new_cartesian.append(line)
       cartesian = new_cartesian
 
-def center_cartesian( ):
+def center_cartesian():
       '''Find the center of mass and move it to the origin'''
       total_mass = 0.0
-      center_of_mass = np.array( [ 0.0, 0.0, 0.0 ] )
+      center_of_mass = np.array([ 0.0, 0.0, 0.0 ])
       for atom in cartesian:
             mass = atom[2]
             total_mass += mass
@@ -246,43 +247,43 @@ def center_cartesian( ):
       for atom in cartesian:
             atom[1] = atom[1] - center_of_mass
 
-def cartesian_radians_to_degrees( ):
+def cartesian_radians_to_degrees():
       for atom in cartesian:
-            atom[1][1][1] = np.degrees( atom[1][1][1] )
-            atom[1][2][1] = np.degrees( atom[1][2][1] )
+            atom[1][1][1] = np.degrees(atom[1][1][1])
+            atom[1][2][1] = np.degrees(atom[1][2][1])
 
-def output_cartesian(  output_file='cartesian.dat' ):
+def output_cartesian( output_file='cartesian.dat'):
       '''Output the cartesian coordinates of the file'''
-      with open( output_file, 'w' ) as f:
-            f.write( str( len(cartesian) ) )
-            f.write( '\n\n' )
+      with open(output_file, 'w') as f:
+            f.write(str(len(cartesian)))
+            f.write('\n\n')
             for line in cartesian:
                   name, position, mass = line
-                  f.write( name + '\t' )
-                  f.write( '\t'.join( str(x) for x in position ) )
-                  f.write( '\n' )
+                  f.write(name + '\t')
+                  f.write('\t'.join(str(x) for x in position))
+                  f.write('\n')
 
-def print_cartesian( ):
+def print_cartesian():
       '''Print the cartesian coordinates'''
       for line in cartesian:
-            print(line[0] + '\t' + '\t'.join( str(x) for x in line[1] ))
+            print(line[0] + '\t' + '\t'.join(str(x) for x in line[1]))
 
-def output_zmatrix(  output_file='zmatrix.dat' ):
+def output_zmatrix( output_file='zmatrix.dat'):
       '''Output the zmatrix to the file'''
-      with open( output_file, 'w' ) as f:
-            f.write( '#ZMATRIX\n#\n' )
+      with open(output_file, 'w') as f:
+            f.write('#ZMATRIX\n#\n')
             for line in zmatrix:
                   name, position, mass = line
-                  f.write( name )
+                  f.write(name)
                   for i in position:
-                        for j in range( 0, len(i), 2 ):
-                              f.write( '\t' + str(i[j]+1) + '\t' + str(i[j+1]) )
-                  f.write( '\n' )
+                        for j in range(0, len(i), 2):
+                              f.write('\t' + str(i[j]+1) + '\t' + str(i[j+1]))
+                  f.write('\n')
 
 def print_zmatrix(data):
       '''Print the zmatrix'''
       for line in data:
-            print(line[0] + '\t' + '\t'.join( str(x) for x in line[1] ))
+            print(line[0] + '\t' + '\t'.join(str(x) for x in line[1]))
 
 def flatten(container):
     for i in container:
@@ -291,17 +292,3 @@ def flatten(container):
                 yield j
         else:
             yield i
-
-# xyz = [['H', 0., 0., 0.],
-# ['O', 0.9, 0., 0.],
-# ['O', 1.2623467, 0.0, -1.3522962],
-# ['H', 1.7424909, 0.7528647, -1.4647962]]
-#
-# c = read_cartesian(xyz)
-# print(c)
-# z = cartesian_to_zmatrix(c)
-# for i in range(len(z)):
-#       z[i] = list(flatten(z[i]))
-#       z[i].pop()
-#
-# print(z)

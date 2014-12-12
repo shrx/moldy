@@ -109,6 +109,8 @@ def zmat2xyz(data):
 def writeOutput(data, filename):
     if len(data) > 0:
         t = PrettyTable()
+        t.add_row(len(data))
+        t.add_row('')
         maxLen = max([ len(row) for row in data ])
         for row in data:
             l = len(row)
@@ -263,25 +265,33 @@ class MainWidget(QWidget):
         selection = self.periodicTableWidget.selection()
         return selection
 
+    # import molecule with zmatrix coordinates
     def readZmat(self):
-        filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.zmat')
+        filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.zmat;;*.*')
         self.inp = []
         if filename:
             with open(filename, 'r') as f:
+                next(f)
+                next(f)
                 for row in f:
                     self.inp.append(row.split())
                 f.close()
         self.populateModel()
 
+    # import molecule with xyz coordinates
     def readXYZ(self):
         filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.xyz;;*.*')
         xyz = []
         elems = []
         if filename:
             with open(filename, 'r') as f:
+                next(f)
+                next(f)
+                #print(list(f))
                 for row in f:
                     xyz.append(row.split())
                 f.close()
+                #print(xyz)
                 c = read_cartesian(xyz)
                 z = cartesian_to_zmatrix(c)
                 for i in range(len(z)):

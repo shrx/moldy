@@ -94,14 +94,14 @@ _ELEMENT_POSITIONS = \
      113: (6, 12), 114: (6, 13), 115: (6, 14), 116: (6, 15), 117: (6, 16),
      118: (6, 17)}
 
-barve = []
-with open('barve.csv') as csvfile:
+colors = []
+with open('colors.csv') as csvfile:
     csvreader = csv.reader(csvfile)
     for row in csvreader:
-        barve.append([int(row[0]),row[1],QColor(int(row[2]),int(row[3]),int(row[4]))])
+        colors.append([int(row[0]),row[1],QColor(int(row[2]),int(row[3]),int(row[4]))])
 
 def _category_color_function(z):
-    return barve[min(len(barve)-1, z-1)][-1]
+    return colors[min(len(colors)-1, z-1)][-1]
 
     raise ValueError('No color definition for z: %s' % z)
 

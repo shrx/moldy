@@ -5,7 +5,7 @@ import itertools
 import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
-from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QPushButton, QFileDialog, QHBoxLayout, QVBoxLayout
+from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QPushButton, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QGridLayout
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
@@ -22,23 +22,25 @@ class MainWidget(QWidget):
         self.periodicTableWidget = periodictableGUI.PeriodicTableDialog()
 
         # initial molecule Zmatrix (can be empty)
-        self.inp = [[]]
-        #self.inp = [['H'],
-        #['O', 1, 0.9],
-        #['O', 2, 1.4, 1, 105.],
-        #['H', 3, 0.9, 2, 105., 1, 120.]]
+        self.inp = []
+        # self.inp = [['H'],
+        # ['O', 1, 0.9],
+        # ['O', 2, 1.4, 1, 105.],
+        # ['H', 3, 0.9, 2, 105., 1, 120.]]
+
+        self.atomList = []
+        self.highList = []
 
         # define & initialize model that will contain Zmatrix data
-        #if self.inp == [[]]:
-            #self.inp = [[self.periodicTable()[1]]]
         self.model = QStandardItemModel(len(self.inp), 7, self)
         self.inputField = QTableView(self)
         self.inputField.setModel(self.model)
-        self.inputField.setMinimumWidth(325)
+        self.inputField.setFixedWidth(325)
+        self.inputField.installEventFilter(self)
+        self.model.installEventFilter(self)
         self.model.setHorizontalHeaderLabels(['atom','','bond','','angle','','dihedral'])
         for j, width in enumerate([40, 22, 65, 22, 65, 22, 65]):
             self.inputField.setColumnWidth(j, width)
-
         # populate the model
         self.populateModel()
 
@@ -51,12 +53,18 @@ class MainWidget(QWidget):
         self.addRowButton.clicked.connect(self.addRow)
         self.deleteRowButton = QPushButton('Delete row', self)
         self.deleteRowButton.clicked.connect(self.deleteRow)
+        self.addAtomButton = QPushButton('Add atom', self)
+        self.addAtomButton.clicked.connect(self.buildB)
+        self.measureDistanceButton = QPushButton('Measure distance', self)
+        self.measureDistanceButton.clicked.connect(self.measureDistanceB)
         #self.periodicTableButton = QPushButton('periodicTable', self)
         #self.periodicTableButton.clicked.connect(self.periodicTable)
         self.writeZmatButton = QPushButton('Write Zmat to file', self)
         self.writeZmatButton.clicked.connect(self.writeZmat)
         self.writeXYZButton = QPushButton('Write XYZ to file', self)
         self.writeXYZButton.clicked.connect(self.writeXYZ)
+
+        self.statusBar = QStatusBar(self)
 
         # define GL widget that displays the 3D molecule model
         self.window = gl.GLViewWidget()
@@ -68,35 +76,36 @@ class MainWidget(QWidget):
         self.fileDialog = QFileDialog(self)
 
         # define application layout
-        self.layout = QHBoxLayout(self)
+        self.layout = QVBoxLayout(self)
+        self.layout1 = QHBoxLayout()
         self.left = QVBoxLayout()
         self.left.addWidget(self.inputField)
-        self.leftBot = QHBoxLayout()
-        self.leftBot2 = QHBoxLayout()
-        self.leftBot3 = QHBoxLayout()
-        self.leftBot.addWidget(self.addRowButton)
-        self.leftBot.addWidget(self.deleteRowButton)
+        self.leftBot = QGridLayout()
+        self.leftBot.addWidget(self.addRowButton, 0, 0)
+        self.leftBot.addWidget(self.deleteRowButton, 0, 1)
         #self.leftBot.addWidget(self.periodicTableButton)
-        self.leftBot2.addWidget(self.readZmatButton)
-        self.leftBot2.addWidget(self.readXYZButton)
-        self.leftBot3.addWidget(self.writeZmatButton)
-        self.leftBot3.addWidget(self.writeXYZButton)
+        self.leftBot.addWidget(self.addAtomButton, 1, 0)
+        self.leftBot.addWidget(self.measureDistanceButton, 1, 1)
+        self.leftBot.addWidget(self.readZmatButton, 2, 0)
+        self.leftBot.addWidget(self.readXYZButton, 2, 1)
+        self.leftBot.addWidget(self.writeZmatButton, 3, 0)
+        self.leftBot.addWidget(self.writeXYZButton, 3, 1)
         self.left.addLayout(self.leftBot)
-        self.left.addLayout(self.leftBot2)
-        self.left.addLayout(self.leftBot3)
-        self.layout.addLayout(self.left)
-        self.layout.addWidget(self.window)
+        self.layout1.addLayout(self.left)
+        self.layout1.addWidget(self.window)
+        self.layout.addLayout(self.layout1)
+        self.layout.addWidget(self.statusBar)
 
         self.adjustSize()
         self.setWindowTitle('Moldy')
 
         # start monitoring changes in the model
         self.model.dataChanged.connect(self.updateView)
-        self.buildList = []
 
     # run and show the application
     def run(self):
         self.show()
+        self.inputField.clicked.connect(self.cellClicked)
         qt_app.exec_()
 
     # fill the model with initial data from 'self.inp'
@@ -127,14 +136,48 @@ class MainWidget(QWidget):
                 self.model.item(row, j).setFlags(Qt.ItemIsEnabled)
         # restart GL window updating
         self.model.dataChanged.connect(self.updateView)
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Added 1 row.", 3000)
 
     # delete the last row of the model
     def deleteRow(self):
-        self.model.removeRow(self.model.rowCount()-1)
+        xyz = [list(vi) for vi in list(v)]
+        atoms = [str(elements[e]) for e in elems]
+        oldLen = self.model.rowCount()
+        idxs = sorted(set(idx.row() for idx in self.inputField.selectedIndexes()), reverse=True)
+        newLen = oldLen - len(idxs)
+        if newLen == oldLen:
+            self.model.removeRow(self.model.rowCount()-1)
+        else:
+            self.model.dataChanged.disconnect(self.updateView)
+            for idx in idxs:
+                self.model.removeRow(idx)
+                if idx < 3:
+                    for i in range(idx, min(3, newLen)):
+                        for j in range(2*i+1, 7):
+                            self.model.setItem(i, j, QStandardItem())
+                            self.model.item(i, j).setBackground(QColor(150,150,150))
+                            self.model.item(i, j).setFlags(Qt.ItemIsEnabled)
+                if len(xyz) > idx:
+                    xyz.pop(idx)
+                    atoms.pop(idx)
+            self.inp = xyz2zmat(xyz, atoms)
+            self.populateModel()
+            for i in reversed(self.highList):
+                self.window.removeItem(i[1])
+            self.highList = []
+            self.model.dataChanged.connect(self.updateView)
         self.updateView()
+        self.statusBar.clearMessage()
+        if idxs:
+            self.statusBar.showMessage("Deleted row(s): "+str([i+1 for i in idxs]), 3000)
+        else:
+            self.statusBar.showMessage("Deleted last row.", 3000)
 
     # show the periodic table widget
     def periodicTable(self):
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Select element from periodic table.")
         self.periodicTableWidget.exec_()
         selection = self.periodicTableWidget.selection()
         return selection
@@ -155,6 +198,8 @@ class MainWidget(QWidget):
         self.populateModel()
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Read molecule from "+filename+".", 5000)
 
     # import molecule with xyz coordinates
     def readXYZ(self):
@@ -178,6 +223,8 @@ class MainWidget(QWidget):
         self.populateModel()
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Read molecule from "+filename+".", 5000)
 
     # export Zmatrix to csv
     def writeZmat(self):
@@ -190,6 +237,8 @@ class MainWidget(QWidget):
         else:
             if filename:
                 writeOutput(zm, filename)
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Wrote molecule to "+filename+".", 5000)
 
     # export XYZ coordinates to csv
     def writeXYZ(self):
@@ -210,6 +259,8 @@ class MainWidget(QWidget):
         else:
             if filename:
                 writeOutput(xyz, filename)
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Wrote molecule to "+filename+".", 5000)
 
     # redraw the 3D molecule in GL widget
     def updateView(self):
@@ -230,6 +281,7 @@ class MainWidget(QWidget):
             for item in reversed(self.window.items):
                 self.window.removeItem(item)
             # create a second coordinate list 'vs' that is centered in the GL view
+            self.atomList = []
             if len(v) > 0:
                 shift = np.mean(v, axis=0)
                 vs = np.add(v, -shift)
@@ -244,10 +296,12 @@ class MainWidget(QWidget):
                 # draw atoms
                 for i in range(nelems):
                     addAtom(self.window, i, r, vs, c)
+                    self.atomList.append([i, self.window.items[-1]])
                 # draw bonds where appropriate
                 combs = itertools.combinations(range(nelems), 2)
                 for i in combs:
                     addBond(self.window, i[0], i[1], r, vs, c)
+                self.regularItems = len(self.window.items)
         if len(v) > 1:
             maxDim = float("-inf")
             for dim in v.T:
@@ -255,64 +309,113 @@ class MainWidget(QWidget):
                 if span > maxDim:
                     maxDim = span
         else: maxDim = 2
-        self.window.setCameraPosition(distance=maxDim*1.5)
+        self.window.setCameraPosition(distance=maxDim*1.5+1)
 
     # detect mouse clicks in GL window and process them
     def eventFilter(self, obj, event):
-        if self.layout.indexOf(obj) != -1:
+        if obj == self.window:
             if event.type() == event.MouseButtonPress:
-                allItems = obj.items
                 itms = obj.itemsAt((event.pos().x()-2, event.pos().y()-2, 4, 4))
-                # check if something was clicked
-                if len(itms) > 0:
-                    i = allItems.index(itms[0])
-                    e = self.model.index(i, 0).data()
-                    # check if an atom was clicked
-                    if i < nelems:
-                        # highlight the clicked atom
-                        addAtom(obj, i, r, vs, c, 'highlight')
-                        # populate the list of reference atoms
-                        # so we know where to put a new one
-                        if len(self.buildList) < min(3, nelems):
-                            self.buildList.append(i)
-                        # add a new atom
-                        if len(self.buildList) == min(3, nelems):
-                            selection = self.periodicTable()
-                            self.addRow()
-                            # temporarily disable GL view updating
-                            self.model.dataChanged.disconnect(self.updateView)
-                            row = self.model.rowCount()-1
-                            newSymbol = selection[1]
-                            newBond = round(2.1*gmean([ elements[e].covalent_radius for e in [selection[0], elems[self.buildList[0]]] ]), 4)
-                            newData = [newSymbol, self.buildList[0]+1, newBond]
-                            if len(self.buildList) >= 2:
-                                newAngle = 109.4712
-                                newData.append(self.buildList[1]+1)
-                                newData.append(newAngle)
-                                if len(self.buildList) == 3:
-                                    newDihedral = 120.
-                                    newData.append(self.buildList[2]+1)
-                                    newData.append(newDihedral)
-                            for j, cell in enumerate(newData):
-                                item = QStandardItem(str(cell))
-                                self.model.setItem(row, j, item)
-                            # clear reference list and enable GL view updating
-                            self.buildList = []
-                            self.model.dataChanged.connect(self.updateView)
-                            self.updateView()
-                    # if clicked, un-highlight the last highlighted atom
-                    if i >= len(allItems)-1:
-                        obj.removeItem(itms[0])
-                        self.buildList.pop()
-                # if there are no atoms
-                if len(allItems) == 0:
-                    if self.model.rowCount() == 0:
-                        self.addRow()
-                    selection = self.periodicTable()
-                    item = QStandardItem(selection[1])
-                    self.model.setItem(0, 0, item)
+                if len(itms):
+                    self.highlight(obj, [itms[0]])
+                elif len(self.atomList) == 0:
+                    self.build()
         # also do the default click action
         return super(MainWidget, self).eventFilter(obj, event)
+
+    def cellClicked(self):
+        idxs = sorted(set(idx.row() for idx in self.inputField.selectedIndexes()), reverse=True)
+        itms = []
+        if self.highList:
+            highIdx = list(np.array(self.highList).T[0])
+        for idx in idxs:
+            if self.highList and idx in highIdx:
+                itms.append(self.highList[highIdx.index(idx)][1])
+            elif len(self.atomList) > idx:
+                itms.append(self.atomList[idx][1])
+        self.highlight(self.window, itms)
+
+    def highlight(self, obj, itms):
+        for itm in itms:
+            idx = next((i for i, sublist in enumerate(self.atomList) if itm in sublist), -1)
+            if idx != -1:
+                addAtom(obj, idx, r, vs, c, 'highlight')
+                self.highList.append([idx, obj.items[-1]])
+                self.inputField.selectRow(idx)
+            idx = next((i for i, sublist in enumerate(self.highList) if itm in sublist), -1)
+            if idx != -1:
+                obj.removeItem(self.highList[idx][1])
+                self.highList.pop(idx)
+                self.inputField.clearSelection()
+        self.statusBar.clearMessage()
+        if len(self.highList) > 0:
+            idxs = np.asarray(self.highList).T[0]
+            selected = []
+            for i in idxs:
+                selected.append(str(i+1)+str(elements[elems[i]]))
+            self.statusBar.showMessage("Selected atoms: "+str(selected), 5000)
+
+    def buildB(self):
+        if len(self.highList) <= min(nelems, 3):
+            diff = min(nelems, 3) - len(self.highList)
+            if diff != 0:
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Please select "+str(diff)+" more atom(s).")
+            else:
+                self.build()
+        else:
+            self.statusBar.clearMessage()
+            self.statusBar.showMessage("Too many atoms selected.")
+
+    def build(self):
+        selection = self.periodicTable()
+        row = self.model.rowCount()
+        self.addRow()
+        self.model.dataChanged.disconnect(self.updateView)
+        newSymbol = selection[1]
+        newData = [newSymbol]
+        if len(self.highList) >= 1:
+            newBond = round(2.1*gmean([ elements[e].covalent_radius for e in [selection[0], elems[self.highList[0][0]]] ]), 4)
+            newData.append(self.highList[0][0]+1)
+            newData.append(newBond)
+            if len(self.highList) >= 2:
+                newAngle = 109.4712
+                newData.append(self.highList[1][0]+1)
+                newData.append(newAngle)
+                if len(self.highList) == 3:
+                    newDihedral = 120.
+                    newData.append(self.highList[2][0]+1)
+                    newData.append(newDihedral)
+        for j, cell in enumerate(newData):
+            item = QStandardItem(str(cell))
+            self.model.setItem(row, j, item)
+        self.highList = []
+        self.model.dataChanged.connect(self.updateView)
+        self.updateView()
+
+    def measureDistanceB(self):
+        sel = len(self.highList)
+        if sel <= 2:
+            if sel < 2:
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Please select "+str(2-sel)+" more atom(s).")
+            else:
+                self.measureDistance()
+        else:
+            self.statusBar.clearMessage()
+            self.statusBar.showMessage("Too many atoms selected.")
+
+    def measureDistance(self):
+        pts = []
+        for pt in self.highList:
+            pts.append(vs[pt[0]])
+        pts = np.array(pts)
+        line = gl.GLLinePlotItem(pos=pts, color=(0., 1., 0., 1.), width=3)
+        self.window.addItem(line)
+        q = pts[1]-pts[0]
+        dist = round(np.sqrt(np.dot(q, q)), 4)
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Measured distance: "+str(dist)+" A.", 3000)
 
 # run the application
 app = MainWidget()

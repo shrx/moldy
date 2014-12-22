@@ -1,11 +1,11 @@
 from scipy.stats import gmean
 from periodictable import elements
-import periodictableGUI
+import widgets
 import itertools
 import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
-from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QPushButton, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QGridLayout
+from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QMenuBar, QAction, qApp, QMessageBox
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
@@ -19,7 +19,7 @@ class MainWidget(QWidget):
         QWidget.__init__(self)
 
         # define periodic table widget for element selection
-        self.periodicTableWidget = periodictableGUI.PeriodicTableDialog()
+        self.periodicTableWidget = widgets.PeriodicTableDialog()
 
         # initial molecule Zmatrix (can be empty)
         self.inp = []
@@ -44,55 +44,102 @@ class MainWidget(QWidget):
         # populate the model
         self.populateModel()
 
-        # define GUI buttons and their actions
-        self.readZmatButton = QPushButton('Read Zmat from file', self)
-        self.readZmatButton.clicked.connect(self.readZmat)
-        self.readXYZButton = QPushButton('Read XYZ from file', self)
-        self.readXYZButton.clicked.connect(self.readXYZ)
-        self.addRowButton = QPushButton('Add row', self)
-        self.addRowButton.clicked.connect(self.addRow)
-        self.deleteRowButton = QPushButton('Delete row', self)
-        self.deleteRowButton.clicked.connect(self.deleteRow)
-        self.addAtomButton = QPushButton('Add atom', self)
-        self.addAtomButton.clicked.connect(self.buildB)
-        self.measureDistanceButton = QPushButton('Measure distance', self)
-        self.measureDistanceButton.clicked.connect(self.measureDistanceB)
-        #self.periodicTableButton = QPushButton('periodicTable', self)
-        #self.periodicTableButton.clicked.connect(self.periodicTable)
-        self.writeZmatButton = QPushButton('Write Zmat to file', self)
-        self.writeZmatButton.clicked.connect(self.writeZmat)
-        self.writeXYZButton = QPushButton('Write XYZ to file', self)
-        self.writeXYZButton.clicked.connect(self.writeXYZ)
+        #define Menu bar menus and their actions
+        self.menuBar = QMenuBar(self)
+        fileMenu = self.menuBar.addMenu('&File')
+        editMenu = self.menuBar.addMenu('&Edit')
+        viewMenu = self.menuBar.addMenu('&View')
+        measureMenu = self.menuBar.addMenu('&Measure')
+        helpMenu = self.menuBar.addMenu('&Help')
 
-        self.statusBar = QStatusBar(self)
+        readZmatAction = QAction('&Read &ZMat', self)
+        readZmatAction.setShortcut('Ctrl+O')
+        readZmatAction.setStatusTip('Read Zmat from file')
+        readZmatAction.triggered.connect(self.readZmat)
+        fileMenu.addAction(readZmatAction)
+
+        readXYZAction = QAction('&Read &XYZ', self)
+        readXYZAction.setShortcut('Ctrl+Shift+O')
+        readXYZAction.setStatusTip('Read XYZ from file')
+        readXYZAction.triggered.connect(self.readXYZ)
+        fileMenu.addAction(readXYZAction)
+
+        writeZmatAction = QAction('&Write &ZMat', self)
+        writeZmatAction.setShortcut('Ctrl+S')
+        writeZmatAction.setStatusTip('Write Zmat to file')
+        writeZmatAction.triggered.connect(self.writeZmat)
+        fileMenu.addAction(writeZmatAction)
+
+        writeXYZAction = QAction('&Write &XYZ', self)
+        writeXYZAction.setShortcut('Ctrl+Shift+S')
+        writeXYZAction.setStatusTip('Write XYZ from file')
+        writeXYZAction.triggered.connect(self.writeXYZ)
+        fileMenu.addAction(writeXYZAction)
+
+        exitAction = QAction('&Exit', self)
+        exitAction.setShortcut('Ctrl+Q')
+        exitAction.setStatusTip('Exit application')
+        exitAction.triggered.connect(qApp.quit)
+        fileMenu.addAction(exitAction)
+
+        addRowAction = QAction('&Add &Row', self)
+        addRowAction.setShortcut('Ctrl+R')
+        addRowAction.setStatusTip('Add row to ZMatrix')
+        addRowAction.triggered.connect(self.addRow)
+        editMenu.addAction(addRowAction)
+
+        deleteRowAction = QAction('&Delete &Row', self)
+        deleteRowAction.setShortcut('Ctrl+Shift+R')
+        deleteRowAction.setStatusTip('Delete row from ZMatrix')
+        deleteRowAction.triggered.connect(self.deleteRow)
+        editMenu.addAction(deleteRowAction)
+
+        addAtomAction = QAction('&Add &Atom', self)
+        addAtomAction.setShortcut('Ctrl+A')
+        addAtomAction.setStatusTip('Add atom to ZMatrix')
+        addAtomAction.triggered.connect(self.buildB)
+        editMenu.addAction(addAtomAction)
+
+        clearLabelsAction = QAction('&Clear Labels', self)
+        clearLabelsAction.setShortcut('Ctrl+Shift+R')
+        clearLabelsAction.setStatusTip('Delete row from ZMatrix')
+        clearLabelsAction.triggered.connect(self.clearLabels)
+        viewMenu.addAction(clearLabelsAction)
+
+        measureDistanceAction = QAction('&Measure &Distance', self)
+        measureDistanceAction.setShortcut('Ctrl+D')
+        measureDistanceAction.setStatusTip('Measure distance between two atoms')
+        measureDistanceAction.triggered.connect(self.measureDistanceB)
+        measureMenu.addAction(measureDistanceAction)
+
+        measureAngleAction = QAction('&Measure &Angle', self)
+        measureAngleAction.setShortcut('Ctrl+Shift+D')
+        measureAngleAction.setStatusTip('Measure angle between three atoms')
+        measureAngleAction.triggered.connect(self.measureAngleB)
+        measureMenu.addAction(measureAngleAction)
+
+        aboutAction = QAction('&About', self)
+        aboutAction.setShortcut('Ctrl+H')
+        aboutAction.setStatusTip('About this program...')
+        aboutAction.triggered.connect(self.about)
+        helpMenu.addAction(aboutAction)
 
         # define GL widget that displays the 3D molecule model
-        self.window = gl.GLViewWidget()
+        self.window = widgets.MyGLView()
         self.window.installEventFilter(self)
         self.window.setMinimumSize(500, 500)
         self.updateView()
 
-        # define save file dialog
+        # define other application parts
+        self.statusBar = QStatusBar(self)
         self.fileDialog = QFileDialog(self)
 
         # define application layout
         self.layout = QVBoxLayout(self)
         self.layout1 = QHBoxLayout()
-        self.left = QVBoxLayout()
-        self.left.addWidget(self.inputField)
-        self.leftBot = QGridLayout()
-        self.leftBot.addWidget(self.addRowButton, 0, 0)
-        self.leftBot.addWidget(self.deleteRowButton, 0, 1)
-        #self.leftBot.addWidget(self.periodicTableButton)
-        self.leftBot.addWidget(self.addAtomButton, 1, 0)
-        self.leftBot.addWidget(self.measureDistanceButton, 1, 1)
-        self.leftBot.addWidget(self.readZmatButton, 2, 0)
-        self.leftBot.addWidget(self.readXYZButton, 2, 1)
-        self.leftBot.addWidget(self.writeZmatButton, 3, 0)
-        self.leftBot.addWidget(self.writeXYZButton, 3, 1)
-        self.left.addLayout(self.leftBot)
-        self.layout1.addLayout(self.left)
+        self.layout1.addWidget(self.inputField)
         self.layout1.addWidget(self.window)
+        self.layout.addWidget(self.menuBar)
         self.layout.addLayout(self.layout1)
         self.layout.addWidget(self.statusBar)
 
@@ -356,16 +403,21 @@ class MainWidget(QWidget):
             self.statusBar.showMessage("Selected atoms: "+str(selected), 5000)
 
     def buildB(self):
-        if len(self.highList) <= min(nelems, 3):
-            diff = min(nelems, 3) - len(self.highList)
-            if diff != 0:
-                self.statusBar.clearMessage()
-                self.statusBar.showMessage("Please select "+str(diff)+" more atom(s).")
-            else:
-                self.build()
+        try:
+            nelems
+        except NameError:
+            self.build()
         else:
-            self.statusBar.clearMessage()
-            self.statusBar.showMessage("Too many atoms selected.")
+            if len(self.highList) <= min(nelems, 3):
+                diff = min(nelems, 3) - len(self.highList)
+                if diff != 0:
+                    self.statusBar.clearMessage()
+                    self.statusBar.showMessage("Please select "+str(diff)+" more atom(s).")
+                else:
+                    self.build()
+            else:
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Too many atoms selected.")
 
     def build(self):
         selection = self.periodicTable()
@@ -414,8 +466,49 @@ class MainWidget(QWidget):
         self.window.addItem(line)
         q = pts[1]-pts[0]
         dist = round(np.sqrt(np.dot(q, q)), 4)
+        self.window.labelPos.append(np.mean(pts[0:2], axis=0))
+        self.window.labelText.append(str(dist))
         self.statusBar.clearMessage()
         self.statusBar.showMessage("Measured distance: "+str(dist)+" A.", 3000)
+
+    def measureAngleB(self):
+        sel = len(self.highList)
+        if sel <= 3:
+            if sel < 3:
+                self.statusBar.clearMessage()
+                self.statusBar.showMessage("Please select "+str(3-sel)+" more atom(s).")
+            else:
+                self.measureAngle()
+        else:
+            self.statusBar.clearMessage()
+            self.statusBar.showMessage("Too many atoms selected.")
+
+    def measureAngle(self):
+        pts = []
+        for pt in self.highList:
+            pts.append(vs[pt[0]])
+        pts = np.array(pts)
+        mesh = gl.MeshData(pts)
+        tri = gl.GLMeshItem(meshdata=mesh, smooth=False, computeNormals=False, color=(0.3, 1., 0.3, 0.5), glOptions=("translucent"))
+        self.window.addItem(tri)
+        q = pts[1]-pts[0]
+        r = pts[2]-pts[0]
+        q_u = q / np.sqrt(np.dot(q, q))
+        r_u = r / np.sqrt(np.dot(r, r))
+        angle = round(degrees(acos(np.dot(q_u, r_u))), 1)
+        self.window.labelPos.append(np.mean(pts[1:3], axis=0))
+        self.window.labelText.append(str(angle))
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage("Measured angle: "+str(angle)+"°", 3000)
+
+    def clearLabels(self):
+        self.window.labelPos = []
+        self.window.labelText = []
+        self.highList = []
+        self.updateView()
+
+    def about(self):
+        QMessageBox.about(self, "About moldy", "moldy alpha 22. 12. 2014")
 
 # run the application
 app = MainWidget()

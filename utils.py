@@ -191,14 +191,6 @@ def xyz2zmat(xyz, atoms):
             zmat.append([atoms[i],n1+1,distance,i2+1,angle,i3+1,dihedral])
     return zmat
 
-def sph2xyz(v):
-    sinTh = sin(v[2])
-    c = []
-    c.append(v[0] * cos(v[1]) * sinTh)
-    c.append(v[0] * sin(v[1]) * sinTh)
-    c.append(v[0] * cos(v[2]))
-    return c
-
 def slerp(q0, r0, t):
     q = np.array(q0)
     r = np.array(r0)

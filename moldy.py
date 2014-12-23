@@ -9,7 +9,6 @@ from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandard
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
-from scipy.interpolate import interp1d
 
 # create Qt application
 qt_app = QApplication(sys.argv)
@@ -165,11 +164,11 @@ class MainWidget(QWidget):
         self.setWindowTitle('Moldy')
         iconPath = 'icon.png'
         icon = QIcon(iconPath)
-        icon.addFile(iconPath, QSize(16,16))
-        icon.addFile(iconPath, QSize(24,24))
-        icon.addFile(iconPath, QSize(32,32))
-        icon.addFile(iconPath, QSize(48,48))
-        icon.addFile(iconPath, QSize(256,256))
+        icon.addFile(iconPath, QSize(16, 16))
+        icon.addFile(iconPath, QSize(24, 24))
+        icon.addFile(iconPath, QSize(32, 32))
+        icon.addFile(iconPath, QSize(48, 48))
+        icon.addFile(iconPath, QSize(256, 256))
         self.setWindowIcon(icon)
 
         # start monitoring changes in the model

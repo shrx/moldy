@@ -5,10 +5,11 @@ import itertools
 import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
-from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QMenuBar, QAction, qApp, QMessageBox
+from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QMenuBar, QAction, qApp, QMessageBox, QIcon
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
+from scipy.interpolate import interp1d
 
 # create Qt application
 qt_app = QApplication(sys.argv)
@@ -22,14 +23,15 @@ class MainWidget(QWidget):
         self.periodicTableWidget = widgets.PeriodicTableDialog()
 
         # initial molecule Zmatrix (can be empty)
-        self.inp = []
-        # self.inp = [['H'],
-        # ['O', 1, 0.9],
-        # ['O', 2, 1.4, 1, 105.],
-        # ['H', 3, 0.9, 2, 105., 1, 120.]]
+        # self.inp = []
+        self.inp = [['H'],
+        ['O', 1, 0.9],
+        ['O', 2, 1.4, 1, 105.],
+        ['H', 3, 0.9, 2, 105., 1, 120.]]
 
         self.atomList = []
         self.highList = []
+        self.labelList = []
 
         # define & initialize model that will contain Zmatrix data
         self.model = QStandardItemModel(len(self.inp), 7, self)
@@ -82,47 +84,63 @@ class MainWidget(QWidget):
         exitAction.triggered.connect(qApp.quit)
         fileMenu.addAction(exitAction)
 
-        addRowAction = QAction('&Add &Row', self)
+        addRowAction = QAction('&Add &row', self)
         addRowAction.setShortcut('Ctrl+R')
         addRowAction.setStatusTip('Add row to ZMatrix')
         addRowAction.triggered.connect(self.addRow)
         editMenu.addAction(addRowAction)
 
-        deleteRowAction = QAction('&Delete &Row', self)
+        deleteRowAction = QAction('&Delete &row', self)
         deleteRowAction.setShortcut('Ctrl+Shift+R')
         deleteRowAction.setStatusTip('Delete row from ZMatrix')
         deleteRowAction.triggered.connect(self.deleteRow)
         editMenu.addAction(deleteRowAction)
 
-        addAtomAction = QAction('&Add &Atom', self)
+        addAtomAction = QAction('&Add &atom', self)
         addAtomAction.setShortcut('Ctrl+A')
         addAtomAction.setStatusTip('Add atom to ZMatrix')
         addAtomAction.triggered.connect(self.buildB)
         editMenu.addAction(addAtomAction)
 
-        clearLabelsAction = QAction('&Clear Labels', self)
-        clearLabelsAction.setShortcut('Ctrl+Shift+R')
-        clearLabelsAction.setStatusTip('Delete row from ZMatrix')
+        clearHighlightsAction = QAction('&Clear selection', self)
+        clearHighlightsAction.setShortcut('Ctrl+C')
+        clearHighlightsAction.setStatusTip('Clear highlighted atoms')
+        clearHighlightsAction.triggered.connect(self.clearHighlights)
+        viewMenu.addAction(clearHighlightsAction)
+
+        clearLabelsAction = QAction('&Clear labels', self)
+        clearLabelsAction.setShortcut('Ctrl+Alt+C')
+        clearLabelsAction.setStatusTip('Clear labels')
         clearLabelsAction.triggered.connect(self.clearLabels)
         viewMenu.addAction(clearLabelsAction)
 
-        measureDistanceAction = QAction('&Measure &Distance', self)
+        clearBothAction = QAction('&Clear selection and labels', self)
+        clearBothAction.setShortcut('Ctrl+Shift+C')
+        clearBothAction.setStatusTip('Clear highlighted atoms and labels')
+        clearBothAction.triggered.connect(self.clearBoth)
+        viewMenu.addAction(clearBothAction)
+
+        measureDistanceAction = QAction('&Measure &distance', self)
         measureDistanceAction.setShortcut('Ctrl+D')
         measureDistanceAction.setStatusTip('Measure distance between two atoms')
         measureDistanceAction.triggered.connect(self.measureDistanceB)
         measureMenu.addAction(measureDistanceAction)
 
-        measureAngleAction = QAction('&Measure &Angle', self)
+        measureAngleAction = QAction('&Measure &angle', self)
         measureAngleAction.setShortcut('Ctrl+Shift+D')
         measureAngleAction.setStatusTip('Measure angle between three atoms')
         measureAngleAction.triggered.connect(self.measureAngleB)
         measureMenu.addAction(measureAngleAction)
 
         aboutAction = QAction('&About', self)
-        aboutAction.setShortcut('Ctrl+H')
         aboutAction.setStatusTip('About this program...')
         aboutAction.triggered.connect(self.about)
         helpMenu.addAction(aboutAction)
+
+        aboutQtAction = QAction('&About Qt', self)
+        aboutQtAction.setStatusTip('About Qt...')
+        aboutQtAction.triggered.connect(self.aboutQt)
+        helpMenu.addAction(aboutQtAction)
 
         # define GL widget that displays the 3D molecule model
         self.window = widgets.MyGLView()
@@ -145,6 +163,14 @@ class MainWidget(QWidget):
 
         self.adjustSize()
         self.setWindowTitle('Moldy')
+        iconPath = 'icon.png'
+        icon = QIcon(iconPath)
+        icon.addFile(iconPath, QSize(16,16))
+        icon.addFile(iconPath, QSize(24,24))
+        icon.addFile(iconPath, QSize(32,32))
+        icon.addFile(iconPath, QSize(48,48))
+        icon.addFile(iconPath, QSize(256,256))
+        self.setWindowIcon(icon)
 
         # start monitoring changes in the model
         self.model.dataChanged.connect(self.updateView)
@@ -184,7 +210,7 @@ class MainWidget(QWidget):
         # restart GL window updating
         self.model.dataChanged.connect(self.updateView)
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Added 1 row.", 3000)
+        self.statusBar.showMessage('Added 1 row.', 3000)
 
     # delete the last row of the model
     def deleteRow(self):
@@ -217,14 +243,14 @@ class MainWidget(QWidget):
         self.updateView()
         self.statusBar.clearMessage()
         if idxs:
-            self.statusBar.showMessage("Deleted row(s): "+str([i+1 for i in idxs]), 3000)
+            self.statusBar.showMessage('Deleted row(s): '+str([i+1 for i in idxs]), 3000)
         else:
-            self.statusBar.showMessage("Deleted last row.", 3000)
+            self.statusBar.showMessage('Deleted last row.', 3000)
 
     # show the periodic table widget
     def periodicTable(self):
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Select element from periodic table.")
+        self.statusBar.showMessage('Select element from periodic table.')
         self.periodicTableWidget.exec_()
         selection = self.periodicTableWidget.selection()
         return selection
@@ -246,7 +272,7 @@ class MainWidget(QWidget):
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Read molecule from "+filename+".", 5000)
+        self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
 
     # import molecule with xyz coordinates
     def readXYZ(self):
@@ -271,7 +297,7 @@ class MainWidget(QWidget):
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Read molecule from "+filename+".", 5000)
+        self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
 
     # export Zmatrix to csv
     def writeZmat(self):
@@ -285,7 +311,7 @@ class MainWidget(QWidget):
             if filename:
                 writeOutput(zm, filename)
                 self.statusBar.clearMessage()
-                self.statusBar.showMessage("Wrote molecule to "+filename+".", 5000)
+                self.statusBar.showMessage('Wrote molecule to '+filename+'.', 5000)
 
     # export XYZ coordinates to csv
     def writeXYZ(self):
@@ -307,7 +333,7 @@ class MainWidget(QWidget):
             if filename:
                 writeOutput(xyz, filename)
                 self.statusBar.clearMessage()
-                self.statusBar.showMessage("Wrote molecule to "+filename+".", 5000)
+                self.statusBar.showMessage('Wrote molecule to '+filename+'.', 5000)
 
     # redraw the 3D molecule in GL widget
     def updateView(self):
@@ -348,9 +374,12 @@ class MainWidget(QWidget):
                 combs = itertools.combinations(range(nelems), 2)
                 for i in combs:
                     addBond(self.window, i[0], i[1], r, vs, c)
-                self.regularItems = len(self.window.items)
+                for i in self.highList:
+                    self.window.addItem(i[1])
+                for i in self.labelList:
+                    self.window.addItem(i)
         if len(v) > 1:
-            maxDim = float("-inf")
+            maxDim = float('-inf')
             for dim in v.T:
                 span = max(dim)-min(dim)
                 if span > maxDim:
@@ -400,7 +429,7 @@ class MainWidget(QWidget):
             selected = []
             for i in idxs:
                 selected.append(str(i+1)+str(elements[elems[i]]))
-            self.statusBar.showMessage("Selected atoms: "+str(selected), 5000)
+            self.statusBar.showMessage('Selected atoms: '+str(selected), 5000)
 
     def buildB(self):
         try:
@@ -412,12 +441,12 @@ class MainWidget(QWidget):
                 diff = min(nelems, 3) - len(self.highList)
                 if diff != 0:
                     self.statusBar.clearMessage()
-                    self.statusBar.showMessage("Please select "+str(diff)+" more atom(s).")
+                    self.statusBar.showMessage('Please select '+str(diff)+' more atom(s).')
                 else:
                     self.build()
             else:
                 self.statusBar.clearMessage()
-                self.statusBar.showMessage("Too many atoms selected.")
+                self.statusBar.showMessage('Too many atoms selected.')
 
     def build(self):
         selection = self.periodicTable()
@@ -450,65 +479,88 @@ class MainWidget(QWidget):
         if sel <= 2:
             if sel < 2:
                 self.statusBar.clearMessage()
-                self.statusBar.showMessage("Please select "+str(2-sel)+" more atom(s).")
+                self.statusBar.showMessage('Please select '+str(2-sel)+' more atom(s).')
             else:
                 self.measureDistance()
         else:
             self.statusBar.clearMessage()
-            self.statusBar.showMessage("Too many atoms selected.")
+            self.statusBar.showMessage('Too many atoms selected.')
 
     def measureDistance(self):
         pts = []
         for pt in self.highList:
             pts.append(vs[pt[0]])
         pts = np.array(pts)
+        self.clearHighlights()
         line = gl.GLLinePlotItem(pos=pts, color=(0., 1., 0., 1.), width=3)
         self.window.addItem(line)
+        self.labelList.append(line)
         q = pts[1]-pts[0]
         dist = round(np.sqrt(np.dot(q, q)), 4)
         self.window.labelPos.append(np.mean(pts[0:2], axis=0))
         self.window.labelText.append(str(dist))
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Measured distance: "+str(dist)+" A.", 3000)
+        self.statusBar.showMessage('Measured distance: '+str(dist)+' A.', 3000)
 
     def measureAngleB(self):
         sel = len(self.highList)
         if sel <= 3:
             if sel < 3:
                 self.statusBar.clearMessage()
-                self.statusBar.showMessage("Please select "+str(3-sel)+" more atom(s).")
+                self.statusBar.showMessage('Please select '+str(3-sel)+' more atom(s).')
             else:
                 self.measureAngle()
         else:
             self.statusBar.clearMessage()
-            self.statusBar.showMessage("Too many atoms selected.")
+            self.statusBar.showMessage('Too many atoms selected.')
 
     def measureAngle(self):
         pts = []
         for pt in self.highList:
             pts.append(vs[pt[0]])
         pts = np.array(pts)
-        mesh = gl.MeshData(pts)
-        tri = gl.GLMeshItem(meshdata=mesh, smooth=False, computeNormals=False, color=(0.3, 1., 0.3, 0.5), glOptions=("translucent"))
-        self.window.addItem(tri)
         q = pts[1]-pts[0]
         r = pts[2]-pts[0]
         q_u = q / np.sqrt(np.dot(q, q))
         r_u = r / np.sqrt(np.dot(r, r))
         angle = round(degrees(acos(np.dot(q_u, r_u))), 1)
-        self.window.labelPos.append(np.mean(pts[1:3], axis=0))
+        srange = np.array([slerp(q, r, t) for t in np.arange(0.0, 13/12, 1/12)])
+        self.clearHighlights()
+        for i in range(12):
+            mesh = gl.MeshData(np.array([[0,0,0],srange[i],srange[i+1]]))
+            tri = gl.GLMeshItem(meshdata=mesh, smooth=False, computeNormals=False, color=(0.3, 1., 0.3, 0.5), glOptions=('translucent'))
+            tri.translate(pts[0][0], pts[0][1], pts[0][2])
+            self.window.addItem(tri)
+            self.labelList.append(tri)
+        self.window.labelPos.append(slerp(q, r, 0.5)+pts[0])
         self.window.labelText.append(str(angle))
         self.statusBar.clearMessage()
-        self.statusBar.showMessage("Measured angle: "+str(angle)+"°", 3000)
+        self.statusBar.showMessage('Measured angle: '+str(angle)+'°', 3000)
 
     def clearLabels(self):
         self.window.labelPos = []
         self.window.labelText = []
+        self.labelList = []
+        self.updateView()
+
+    def clearHighlights(self):
         self.highList = []
+        for item in reversed(self.highList):
+                self.window.removeItem(item[1])
+        self.updateView()
+
+    def clearBoth(self):
+        self.window.labelPos = []
+        self.window.labelText = []
+        self.highList = []
+        self.labelList = []
         self.updateView()
 
     def about(self):
-        QMessageBox.about(self, "About moldy", "moldy alpha 22. 12. 2014")
+        QMessageBox.about(self, 'About moldy', 'moldy alpha 22. 12. 2014')
+
+    def aboutQt(self):
+        QMessageBox.aboutQt(self, 'About Qt')
 
 # run the application
 app = MainWidget()

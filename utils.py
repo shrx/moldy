@@ -4,6 +4,8 @@ import csv
 from math import degrees, radians, acos
 import pyqtgraph.opengl as gl
 from zmat import ZMat
+from math import sin, cos
+from numpy.linalg import norm
 
 # import element colors
 colors = []
@@ -179,7 +181,6 @@ def xyz2zmat(xyz, atoms):
             # Create unit vectors
             q_u = q / np.sqrt(np.dot(q, q))
             r_u = r / np.sqrt(np.dot(r, r))
-            s_u = r / np.sqrt(np.dot(s, s))
             distance = np.sqrt(np.dot(q, q))
             angle = degrees(acos(np.dot(-q_u, r_u)))
             plane1 = np.cross(q, r)
@@ -189,3 +190,21 @@ def xyz2zmat(xyz, atoms):
                 dihedral = -dihedral
             zmat.append([atoms[i],n1+1,distance,i2+1,angle,i3+1,dihedral])
     return zmat
+
+def sph2xyz(v):
+    sinTh = sin(v[2])
+    c = []
+    c.append(v[0] * cos(v[1]) * sinTh)
+    c.append(v[0] * sin(v[1]) * sinTh)
+    c.append(v[0] * cos(v[2]))
+    return c
+
+def slerp(q0, r0, t):
+    q = np.array(q0)
+    r = np.array(r0)
+    l = (np.sqrt(np.dot(q, q))+np.sqrt(np.dot(r, r)))*.45
+    q_u = q / np.sqrt(np.dot(q, q))
+    r_u = r / np.sqrt(np.dot(r, r))
+    angle = acos(np.dot(q_u, r_u))
+    sa = sin(angle)
+    return sin((1.0-t)*angle)/sa*l * q_u + sin(t*angle)/sa*l * r_u

@@ -5,7 +5,7 @@ import itertools
 import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
-from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QMenuBar, QAction, qApp, QMessageBox, QIcon
+from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
@@ -153,7 +153,10 @@ class MainWidget(QWidget):
 
         # define application layout
         self.layout = QVBoxLayout(self)
+        self.layout.setSpacing(1)
+        self.layout.setContentsMargins(1, 1, 1, 1)
         self.layout1 = QHBoxLayout()
+        self.layout1.setSpacing(1)
         self.layout1.addWidget(self.inputField)
         self.layout1.addWidget(self.window)
         self.layout.addWidget(self.menuBar)

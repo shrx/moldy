@@ -15,18 +15,25 @@ with open('colors.csv') as csvfile:
         colors.append([int(row[0]), row[1], (float(row[2])/255, float(row[3])/255, float(row[4])/255, 1)])
 
 # draw atoms in GL window
-def addAtom(w, i, r, vs, c, opt=''):
-    r2 = r[i]*.6
-    if opt == 'highlight':
-        r2 += .15
-    ms = gl.MeshData.sphere(rows=10, cols=20, radius=r2)
-    gs = gl.GLMeshItem(meshdata=ms, smooth=True, drawFaces=True, color=(c[i] if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, shader='shaded', glOptions=('opaque' if opt != 'highlight' else 'translucent'))
+def addAtom(w, i, r, vs, c, opt='', fast=False):
+    if fast:
+        r2 = .1
+        if opt == 'highlight':
+            r2 += .05
+        ms = gl.MeshData.sphere(rows=10, cols=10, radius=r2)
+        gs = gl.GLMeshItem(meshdata=ms, smooth=False, drawFaces=True, color=((1, 1, 1, 0) if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, glOptions='translucent')
+    else:
+        r2 = r[i]*.6
+        if opt == 'highlight':
+            r2 += .05
+        ms = gl.MeshData.sphere(rows=10, cols=20, radius=r2)
+        gs = gl.GLMeshItem(meshdata=ms, smooth=True, drawFaces=True, color=(c[i] if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, shader='shaded', glOptions=('opaque' if opt != 'highlight' else 'translucent'))
     gs.translate(vs[i][0], vs[i][1], vs[i][2])
     w.addItem(gs)
 
 # draw bonds between atoms in GL window;
 # max bond length is configurable with maxLen
-def addBond(w, i, j, r, vs, c):
+def addBond(w, i, j, r, vs, c, fast=False):
     l = np.linalg.norm(np.array(vs[i])-np.array(vs[j]))
     maxLen = (r[i]+r[j])*1.2
     if l < maxLen:
@@ -37,27 +44,36 @@ def addBond(w, i, j, r, vs, c):
         s2 = degrees(np.arctan2(xyz[1], xyz[0]))
         # if atoms are same element, 1 cylinder needed
         if c[i] == c[j]:
-            mc = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l)
-            gc = gl.GLMeshItem(meshdata=mc, smooth=True, drawFaces=True, color=c[i], drawEdges=False, shader='shaded')
-            gc.rotate(s1, 0, 1, 0)
-            gc.rotate(s2, 0, 0, 1)
-            gc.translate(vs[i][0], vs[i][1], vs[i][2])
+            if fast:
+                gc = gl.GLLinePlotItem(pos=np.array([vs[i], vs[j]]), color=c[i], width=3)
+            else:
+                mc = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l)
+                gc = gl.GLMeshItem(meshdata=mc, smooth=True, drawFaces=True, color=c[i], drawEdges=False, shader='shaded')
+                gc.rotate(s1, 0, 1, 0)
+                gc.rotate(s2, 0, 0, 1)
+                gc.translate(vs[i][0], vs[i][1], vs[i][2])
             w.addItem(gc)
         # atoms are different elements; 2 cylinders needed
         else:
             rf = r[i]/(r[i]+r[j])
-            mc1 = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l*rf)
-            gc1 = gl.GLMeshItem(meshdata=mc1, smooth=True, drawFaces=True, color=c[i], drawEdges=False, shader='shaded')
-            gc1.rotate(s1, 0, 1, 0)
-            gc1.rotate(s2, 0, 0, 1)
-            gc1.translate(vs[i][0], vs[i][1], vs[i][2])
+            if fast:
+                gc1 = gl.GLLinePlotItem(pos=np.array([vs[i], np.mean(np.array([vs[i], vs[j]]), axis=0)]), color=c[i], width=3)
+            else:
+                mc1 = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l*rf)
+                gc1 = gl.GLMeshItem(meshdata=mc1, smooth=True, drawFaces=True, color=c[i], drawEdges=False, shader='shaded')
+                gc1.rotate(s1, 0, 1, 0)
+                gc1.rotate(s2, 0, 0, 1)
+                gc1.translate(vs[i][0], vs[i][1], vs[i][2])
             w.addItem(gc1)
-            mc2 = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l*(1-rf))
-            gc2 = gl.GLMeshItem(meshdata=mc2, smooth=True, drawFaces=True, color=c[j], drawEdges=False, shader='shaded')
-            gc2.rotate(180, 0, 0, 1)
-            gc2.rotate(s1-180, 0, 1, 0)
-            gc2.rotate(s2, 0, 0, 1)
-            gc2.translate(vs[j][0], vs[j][1], vs[j][2])
+            if fast:
+                gc2 = gl.GLLinePlotItem(pos=np.array([vs[j], np.mean(np.array([vs[i], vs[j]]), axis=0)]), color=c[j], width=3)
+            else:
+                mc2 = gl.MeshData.cylinder(rows=2, cols=12, radius=[.1, .1], length=l*(1-rf))
+                gc2 = gl.GLMeshItem(meshdata=mc2, smooth=True, drawFaces=True, color=c[j], drawEdges=False, shader='shaded')
+                gc2.rotate(180, 0, 0, 1)
+                gc2.rotate(s1-180, 0, 1, 0)
+                gc2.rotate(s2, 0, 0, 1)
+                gc2.translate(vs[j][0], vs[j][1], vs[j][2])
             w.addItem(gc2)
 
 # flatten a nested list

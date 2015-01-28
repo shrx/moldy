@@ -20,18 +20,19 @@ import csv
 from PyQt4.QtGui import \
     (QWidget, QDialog, QPushButton, QGridLayout, QColor, QFont,
      QLabel, QSizePolicy, QButtonGroup, QDialogButtonBox, QVBoxLayout,
-     QStyleFactory)
+     QStyleFactory, QFrame)
 from PyQt4.QtCore import Qt, QSize, pyqtSignal
 
 import sys
 from PyQt4.QtGui import QApplication
 
 import pyqtgraph.opengl as gl
+from pyqtgraph import GraphicsLayoutWidget
 
 # Local modules.
 from pyhmsa.util.element_properties import get_symbol, get_atomic_number
 
-# Globals and constants variables.
+from cclib.parser import ccopen
 
 class ElementPushButton(QPushButton):
     def __init__(self, atomic_number, parent=None):
@@ -116,18 +117,13 @@ def _calculate_brightness(color):
                          color.blue() ** 2 * .068))
 
 class PeriodicTableWidget(QWidget):
-
     selectionChanged = pyqtSignal()
-
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
-
         # Widgets, layouts and signals
         self._group = QButtonGroup()
-
         layout = QGridLayout()
         layout.setSpacing(0)
-
         ## Element
         for z, position in _ELEMENT_POSITIONS.items():
             widget = ElementPushButton(z)
@@ -135,7 +131,6 @@ class PeriodicTableWidget(QWidget):
             widget.setCheckable(True)
             layout.addWidget(widget, *position)
             self._group.addButton(widget, z)
-
         ## Labels
         layout.addWidget(QLabel(''), 7, 0) # Dummy
         layout.addWidget(QLabel('*'), 5, 2, Qt.AlignRight)
@@ -184,9 +179,7 @@ class PeriodicTableWidget(QWidget):
             return None
 
 class PeriodicTableDialog(QDialog):
-
     selectionChanged = pyqtSignal()
-
     def __init__(self, parent=None):
         QDialog.__init__(self, parent)
         self.setWindowTitle('Periodic table')

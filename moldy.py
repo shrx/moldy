@@ -5,10 +5,13 @@ import itertools
 import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
-from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar
+from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar, QMenu
+from pyqtgraph import GraphicsLayoutWidget, mkPen
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
+from cclib.parser import ccopen
+import pyqtgraph
 
 # create Qt application
 qt_app = QApplication(sys.argv)
@@ -31,6 +34,7 @@ class MainWidget(QWidget):
         self.atomList = []
         self.highList = []
         self.labelList = []
+        self.fast = False
 
         # define & initialize model that will contain Zmatrix data
         self.model = QStandardItemModel(len(self.inp), 7, self)
@@ -64,6 +68,12 @@ class MainWidget(QWidget):
         readXYZAction.setStatusTip('Read XYZ from file')
         readXYZAction.triggered.connect(self.readXYZ)
         fileMenu.addAction(readXYZAction)
+
+        readGaussianAction = QAction('&Read &Gaussian log', self)
+        readGaussianAction.setShortcut('Ctrl+G')
+        readGaussianAction.setStatusTip('Read Gaussian log file')
+        readGaussianAction.triggered.connect(self.readGaussian)
+        fileMenu.addAction(readGaussianAction)
 
         writeZmatAction = QAction('&Write &ZMat', self)
         writeZmatAction.setShortcut('Ctrl+S')
@@ -100,6 +110,15 @@ class MainWidget(QWidget):
         addAtomAction.setStatusTip('Add atom to ZMatrix')
         addAtomAction.triggered.connect(self.buildB)
         editMenu.addAction(addAtomAction)
+
+        drawModeMenu = QMenu('Draw mode', self)
+        viewMenu.addMenu(drawModeMenu)
+        fastDrawAction = QAction("&Fast draw", self)
+        fastDrawAction.triggered.connect(self.fastDraw)
+        normalDrawAction = QAction("&Normal draw", self)
+        normalDrawAction.triggered.connect(self.normalDraw)
+        drawModeMenu.addAction(normalDrawAction)
+        drawModeMenu.addAction(fastDrawAction)
 
         clearHighlightsAction = QAction('&Clear selection', self)
         clearHighlightsAction.setShortcut('Ctrl+C')
@@ -145,7 +164,13 @@ class MainWidget(QWidget):
         self.window = widgets.MyGLView()
         self.window.installEventFilter(self)
         self.window.setMinimumSize(500, 500)
+        #self.window.setBackgroundColor((50, 0, 10))
         self.updateView()
+
+        self.gaussianPlot = GraphicsLayoutWidget()
+        self.gaussianPlot.resize(750, 250)
+        #self.gaussianPlot.setAspectLocked(True)
+        #self.gaussianPlot.addLayout(rowspan=3, colspan=1)
 
         # define other application parts
         self.statusBar = QStatusBar(self)
@@ -270,7 +295,7 @@ class MainWidget(QWidget):
                 for row in f:
                     self.inp.append(row.split())
                 f.close()
-        self.populateModel()
+            self.populateModel()
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
         self.statusBar.clearMessage()
@@ -295,7 +320,65 @@ class MainWidget(QWidget):
                         xyz.append([float(f) for f in rs[1:]])
                 f.close()
             self.inp = xyz2zmat(xyz, elems)
+            self.populateModel()
+            #print(elems)
+        self.model.dataChanged.connect(self.updateView)
+        self.updateView()
+        self.statusBar.clearMessage()
+        self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
+
+    # import Gaussian log file
+    def readGaussian(self):
+        self.gaussianPlot.clear()
+        self.model.dataChanged.disconnect(self.updateView)
+        filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.log;;*.*')
+        self.inp = []
         self.populateModel()
+        if filename:
+            file=ccopen(filename)
+            data=file.parse()
+            self.gaussian=True
+            self.natom=data.getattributes()["natom"]
+            self.atomnos=data.getattributes()["atomnos"].tolist()
+            self.atomsymbols=[ str(elements[e]) for e in self.atomnos ]
+            self.atomcoords=data.getattributes()["atomcoords"].tolist()
+            self.scfenergies=data.getattributes()["scfenergies"].tolist()
+            self.geovalues=data.getattributes()["geovalues"].T.tolist()
+            self.geotargets=data.getattributes()["geotargets"].tolist()
+            self.vibfreqs=data.getattributes()["vibfreqs"].tolist()
+            self.vibirs=data.getattributes()["vibirs"].tolist()
+            self.vibramans=data.getattributes()["vibramans"].tolist()
+            self.vibdisps=data.getattributes()["vibdisps"].tolist()
+            self.inp = xyz2zmat(self.atomcoords[0], self.atomsymbols)
+            self.populateModel()
+
+            self.energyPlot=self.gaussianPlot.addPlot(row=1, col=1)
+            self.energyPlot.clear()
+            self.energyPlot.setTitle(title="SCF Energies")
+            self.energyPlotData=self.energyPlot.plot(self.scfenergies, symbol='o', symbolPen="c", symbolBrush="c", pen="c", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+            self.energyPlotHighLight=self.energyPlot.plot([self.scfenergies[0]], symbol='o', symbolPen="w", symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
+            #self.energyPlotHighLight.dataBounds(0, frac=0.01)
+
+            self.energyPlotData.sigPointsClicked.connect(self.gausclicked)
+
+            forcePlot=self.gaussianPlot.addPlot(row=1, col=2)
+            forcePlot.clear()
+            forcePlot.setTitle(title="RMS & Max Forces")
+            displacementPlot=self.gaussianPlot.addPlot(row=1, col=3)
+            displacementPlot.clear()
+            displacementPlot.setTitle(title="RMS & Max Displacements")
+            forcePlot.addLine(y=np.log10(self.geotargets[0]), pen=mkPen((255, 0, 0, int(255/2)), width=1))
+            forcePlot.addLine(y=np.log10(self.geotargets[1]), pen=mkPen((255, 255, 0, int(255/2)), width=1))
+            forcePlot.plot(self.geovalues[0], symbol='o', symbolPen="r", symbolBrush="r", pen="r", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+            forcePlot.plot(self.geovalues[1], symbol='o', symbolPen="y", symbolBrush="y", pen="y", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+            displacementPlot.addLine(y=np.log10(self.geotargets[2]), pen=mkPen((255, 0, 0, int(255/2)), width=1))
+            displacementPlot.addLine(y=np.log10(self.geotargets[3]), pen=mkPen((255, 255, 0, int(255/2)), width=1))
+            displacementPlot.plot(self.geovalues[2], symbol='o', symbolPen="r", symbolBrush="r", pen="r", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+            displacementPlot.plot(self.geovalues[3], symbol='o', symbolPen="y", symbolBrush="y", pen="y", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+            for i in range(2, 4):
+               plot = self.gaussianPlot.getItem(1, i)
+               plot.setLogMode(y=True)
+            self.gaussianPlot.show()
         self.model.dataChanged.connect(self.updateView)
         self.updateView()
         self.statusBar.clearMessage()
@@ -370,12 +453,12 @@ class MainWidget(QWidget):
                     c.append(colors[i-1][-1])
                 # draw atoms
                 for i in range(nelems):
-                    addAtom(self.window, i, r, vs, c)
+                    addAtom(self.window, i, r, vs, c, fast=self.fast)
                     self.atomList.append([i, self.window.items[-1]])
                 # draw bonds where appropriate
                 combs = itertools.combinations(range(nelems), 2)
                 for i in combs:
-                    addBond(self.window, i[0], i[1], r, vs, c)
+                    addBond(self.window, i[0], i[1], r, vs, c, fast=self.fast)
                 for i in self.highList:
                     self.window.addItem(i[1])
                 for i in self.labelList:
@@ -413,11 +496,27 @@ class MainWidget(QWidget):
                 itms.append(self.atomList[idx][1])
         self.highlight(self.window, itms)
 
+    def gausclicked(self, item, point):
+        #print(point)
+        data = self.energyPlotData.scatter.data
+        points = [ row[7] for row in data ]
+        idx = points.index(point[0])
+        #print(idx)
+        self.energyPlot.removeItem(self.energyPlotHighLight)
+        self.energyPlotHighLight=self.energyPlot.plot([idx], [self.scfenergies[idx]], symbol='o', symbolPen="w", symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
+        self.model.dataChanged.disconnect(self.updateView)
+        self.inp = []
+        self.populateModel()
+        self.inp = xyz2zmat(self.atomcoords[min(idx, len(self.atomcoords)-1)], self.atomsymbols)
+        self.populateModel()
+        self.model.dataChanged.connect(self.updateView)
+        self.updateView()
+
     def highlight(self, obj, itms):
         for itm in itms:
             idx = next((i for i, sublist in enumerate(self.atomList) if itm in sublist), -1)
             if idx != -1:
-                addAtom(obj, idx, r, vs, c, 'highlight')
+                addAtom(obj, idx, r, vs, c, opt='highlight', fast=self.fast)
                 self.highList.append([idx, obj.items[-1]])
                 self.inputField.selectRow(idx)
             idx = next((i for i, sublist in enumerate(self.highList) if itm in sublist), -1)
@@ -557,6 +656,16 @@ class MainWidget(QWidget):
         self.highList = []
         self.labelList = []
         self.updateView()
+
+    def fastDraw(self):
+        if not self.fast:
+            self.fast = True
+            self.updateView()
+
+    def normalDraw(self):
+        if self.fast:
+            self.fast = False
+            self.updateView()
 
     def about(self):
         QMessageBox.about(self, 'About moldy', 'moldy alpha 22. 12. 2014')

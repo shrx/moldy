@@ -11,7 +11,7 @@ import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
 from cclib.parser import ccopen
-import pyqtgraph
+from pyqtgraph import ErrorBarItem
 
 # create Qt application
 qt_app = QApplication(sys.argv)
@@ -113,9 +113,9 @@ class MainWidget(QWidget):
 
         drawModeMenu = QMenu('Draw mode', self)
         viewMenu.addMenu(drawModeMenu)
-        fastDrawAction = QAction("&Fast draw", self)
+        fastDrawAction = QAction('&Fast draw', self)
         fastDrawAction.triggered.connect(self.fastDraw)
-        normalDrawAction = QAction("&Normal draw", self)
+        normalDrawAction = QAction('&Normal draw', self)
         normalDrawAction.triggered.connect(self.normalDraw)
         drawModeMenu.addAction(normalDrawAction)
         drawModeMenu.addAction(fastDrawAction)
@@ -137,6 +137,19 @@ class MainWidget(QWidget):
         clearBothAction.setStatusTip('Clear highlighted atoms and labels')
         clearBothAction.triggered.connect(self.clearBoth)
         viewMenu.addAction(clearBothAction)
+
+        self.showGaussAction = QAction('Show &Gaussian geometry optimization', self)
+        self.showGaussAction.setShortcut('Ctrl+G')
+        self.showGaussAction.setStatusTip('Show Gaussian geometry optimization plots for energy, force and displacement.')
+        self.showGaussAction.setEnabled(False)
+        self.showGaussAction.triggered.connect(self.showGauss)
+        viewMenu.addAction(self.showGaussAction)
+        self.showFreqAction = QAction('Show &IR frequency plot', self)
+        self.showFreqAction.setShortcut('Ctrl+I')
+        self.showFreqAction.setStatusTip('Show Gaussian calculated IR frequency plot.')
+        self.showFreqAction.setEnabled(False)
+        self.showFreqAction.triggered.connect(self.showFreq)
+        viewMenu.addAction(self.showFreqAction)
 
         measureDistanceAction = QAction('&Measure &distance', self)
         measureDistanceAction.setShortcut('Ctrl+D')
@@ -169,8 +182,12 @@ class MainWidget(QWidget):
 
         self.gaussianPlot = GraphicsLayoutWidget()
         self.gaussianPlot.resize(750, 250)
+        self.gaussianPlot.setWindowTitle('Gaussian geometry optimization')
         #self.gaussianPlot.setAspectLocked(True)
         #self.gaussianPlot.addLayout(rowspan=3, colspan=1)
+        self.freqPlot = GraphicsLayoutWidget()
+        self.freqPlot.resize(500, 400)
+        self.freqPlot.setWindowTitle('IR frequency plot')
 
         # define other application parts
         self.statusBar = QStatusBar(self)
@@ -300,6 +317,8 @@ class MainWidget(QWidget):
         self.updateView()
         self.statusBar.clearMessage()
         self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
+        self.showGaussAction.setEnabled(False)
+        self.showFreqAction.setEnabled(False)
 
     # import molecule with xyz coordinates
     def readXYZ(self):
@@ -326,63 +345,91 @@ class MainWidget(QWidget):
         self.updateView()
         self.statusBar.clearMessage()
         self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
+        self.showGaussAction.setEnabled(False)
+        self.showFreqAction.setEnabled(False)
 
     # import Gaussian log file
     def readGaussian(self):
-        self.gaussianPlot.clear()
+
         self.model.dataChanged.disconnect(self.updateView)
         filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.log;;*.*')
-        self.inp = []
-        self.populateModel()
         if filename:
-            file=ccopen(filename)
-            data=file.parse()
-            self.gaussian=True
-            self.natom=data.getattributes()["natom"]
-            self.atomnos=data.getattributes()["atomnos"].tolist()
-            self.atomsymbols=[ str(elements[e]) for e in self.atomnos ]
-            self.atomcoords=data.getattributes()["atomcoords"].tolist()
-            self.scfenergies=data.getattributes()["scfenergies"].tolist()
-            self.geovalues=data.getattributes()["geovalues"].T.tolist()
-            self.geotargets=data.getattributes()["geotargets"].tolist()
-            self.vibfreqs=data.getattributes()["vibfreqs"].tolist()
-            self.vibirs=data.getattributes()["vibirs"].tolist()
-            self.vibramans=data.getattributes()["vibramans"].tolist()
-            self.vibdisps=data.getattributes()["vibdisps"].tolist()
+            self.gaussianPlot.clear()
+            self.inp = []
+            self.populateModel()
+            file = ccopen(filename)
+            data = file.parse()
+            self.natom = data.getattributes()['natom']
+            self.atomnos = data.getattributes()['atomnos'].tolist()
+            self.atomsymbols = [ str(elements[e]) for e in self.atomnos ]
+            self.atomcoords = data.getattributes()['atomcoords'].tolist()
+            self.scfenergies = data.getattributes()['scfenergies'].tolist()
+            self.geovalues = data.getattributes()['geovalues'].T.tolist()
+            self.geotargets = data.getattributes()['geotargets'].tolist()
+            self.vibfreqs = data.getattributes()['vibfreqs'].tolist()
+            #print(self.vibfreqs)
+            self.vibirs = data.getattributes()['vibirs'].tolist()
+            #print(self.vibirs)
+            self.vibramans = data.getattributes()['vibramans'].tolist()
+            self.vibdisps = data.getattributes()['vibdisps'].tolist()
+            #print(self.vibdisps)
             self.inp = xyz2zmat(self.atomcoords[0], self.atomsymbols)
             self.populateModel()
 
-            self.energyPlot=self.gaussianPlot.addPlot(row=1, col=1)
-            self.energyPlot.clear()
-            self.energyPlot.setTitle(title="SCF Energies")
-            self.energyPlotData=self.energyPlot.plot(self.scfenergies, symbol='o', symbolPen="c", symbolBrush="c", pen="c", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
-            self.energyPlotHighLight=self.energyPlot.plot([self.scfenergies[0]], symbol='o', symbolPen="w", symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
-            #self.energyPlotHighLight.dataBounds(0, frac=0.01)
+            irPlot = self.freqPlot.addPlot(row=1, col=1)
+            irPlot.clear()
+            minFreq = min(self.vibfreqs)
+            maxFreq = max(self.vibfreqs)
+            maxInt = max(self.vibirs)
+            x = np.linspace(minFreq-100, maxFreq+100, num=2000)
+            y = x*0
+            for f,i in zip(self.vibfreqs, self.vibirs):
+                yi = lorentzv(x, f, 2*np.pi, i)
+                y = y + yi.tolist()
+            irPlot.maxData = irPlot.plot(x, y, antialias=True)
+            markers = ErrorBarItem(x=np.array(self.vibfreqs), y=np.array(self.vibirs), top=maxInt/30, bottom=None, pen='r')
+            irPlot.addItem(markers)
 
-            self.energyPlotData.sigPointsClicked.connect(self.gausclicked)
-
-            forcePlot=self.gaussianPlot.addPlot(row=1, col=2)
-            forcePlot.clear()
-            forcePlot.setTitle(title="RMS & Max Forces")
-            displacementPlot=self.gaussianPlot.addPlot(row=1, col=3)
-            displacementPlot.clear()
-            displacementPlot.setTitle(title="RMS & Max Displacements")
-            forcePlot.addLine(y=np.log10(self.geotargets[0]), pen=mkPen((255, 0, 0, int(255/2)), width=1))
-            forcePlot.addLine(y=np.log10(self.geotargets[1]), pen=mkPen((255, 255, 0, int(255/2)), width=1))
-            forcePlot.plot(self.geovalues[0], symbol='o', symbolPen="r", symbolBrush="r", pen="r", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
-            forcePlot.plot(self.geovalues[1], symbol='o', symbolPen="y", symbolBrush="y", pen="y", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
-            displacementPlot.addLine(y=np.log10(self.geotargets[2]), pen=mkPen((255, 0, 0, int(255/2)), width=1))
-            displacementPlot.addLine(y=np.log10(self.geotargets[3]), pen=mkPen((255, 255, 0, int(255/2)), width=1))
-            displacementPlot.plot(self.geovalues[2], symbol='o', symbolPen="r", symbolBrush="r", pen="r", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
-            displacementPlot.plot(self.geovalues[3], symbol='o', symbolPen="y", symbolBrush="y", pen="y", symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
-            for i in range(2, 4):
-               plot = self.gaussianPlot.getItem(1, i)
-               plot.setLogMode(y=True)
-            self.gaussianPlot.show()
+            titles = ['SCF Energies', 'RMS & Max Forces', 'RMS & Max Displacements']
+            for i in range(3):
+                self.gaussianPlot.addPlot(row=1, col=i+1)
+                plot = self.gaussianPlot.getItem(1, i+1)
+                plot.setTitle(title=titles[i])
+                if i == 0:
+                    c = ['c']
+                    x = [0]
+                    y = [self.scfenergies]
+                else:
+                    c = ['r', 'y']
+                    x = [0, 0]
+                    y = [self.geovalues[2*i-2], self.geovalues[2*i-1]]
+                    targety = [self.geotargets[2*i-2], self.geotargets[2*i-1]]
+                plot.clear()
+                plot.maxData = plot.plot(y[0], symbol='o', symbolPen=c[0], symbolBrush=c[0], pen=c[0], symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+                plot.highlight=plot.plot(x, [ yy[0] for yy in y ], symbol='o', symbolPen='w', symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
+                plot.maxData.sigPointsClicked.connect(self.gausclicked)
+                if i > 0:
+                    for j in range(2):
+                        plot.addLine(y=np.log10(targety[j]), pen=mkPen((255, 255*j, 0, int(255/2)), width=1))
+                    plot.RMSData=plot.plot(y[1], symbol='o', symbolPen=c[1], symbolBrush=c[1], pen=c[1], symbolSize=5, pxMode=True, antialias=True, autoDownsample=False)
+                    plot.RMSData.sigPointsClicked.connect(self.gausclicked)
+                    plot.setLogMode(y=True)
+            self.showGauss()
+            self.showFreq()
+            self.updateView()
+            self.statusBar.clearMessage()
+            self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
+        if self.natom:
+            self.showGaussAction.setEnabled(True)
+        if self.vibfreqs:
+            self.showFreqAction.setEnabled(True)
         self.model.dataChanged.connect(self.updateView)
-        self.updateView()
-        self.statusBar.clearMessage()
-        self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
+
+    def showGauss(self):
+        self.gaussianPlot.show()
+
+    def showFreq(self):
+        self.freqPlot.show()
 
     # export Zmatrix to csv
     def writeZmat(self):
@@ -497,13 +544,19 @@ class MainWidget(QWidget):
         self.highlight(self.window, itms)
 
     def gausclicked(self, item, point):
-        #print(point)
-        data = self.energyPlotData.scatter.data
-        points = [ row[7] for row in data ]
+        itemdata = item.scatter.data
+        points = [ row[7] for row in itemdata ]
         idx = points.index(point[0])
-        #print(idx)
-        self.energyPlot.removeItem(self.energyPlotHighLight)
-        self.energyPlotHighLight=self.energyPlot.plot([idx], [self.scfenergies[idx]], symbol='o', symbolPen="w", symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
+        for i in range(3):
+            if i == 0:
+                x = [idx]
+                y = [self.scfenergies[idx]]
+            else:
+                x = [idx, idx]
+                y = [self.geovalues[2*i-2][idx], self.geovalues[2*i-1][idx]]
+            plot = self.gaussianPlot.getItem(1, i+1)
+            plot.removeItem(plot.highlight)
+            plot.highlight=plot.plot(x, y, symbol='o', symbolPen='w', symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
         self.model.dataChanged.disconnect(self.updateView)
         self.inp = []
         self.populateModel()

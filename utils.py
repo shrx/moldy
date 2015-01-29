@@ -216,3 +216,7 @@ def slerp(q0, r0, t):
     angle = acos(np.dot(q_u, r_u))
     sa = sin(angle)
     return sin((1.0-t)*angle)/sa*l * q_u + sin(t*angle)/sa*l * r_u
+
+def lorentz(x, x0, gamma, I):
+    return I/(1 + ((x - x0)/gamma)**2)
+lorentzv = np.vectorize(lorentz)

@@ -1,3 +1,5 @@
+# coding=utf-8
+import pdb
 from scipy.stats import gmean
 from periodictable import elements
 import widgets
@@ -6,12 +8,14 @@ import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
 from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar, QMenu
-from pyqtgraph import GraphicsLayoutWidget, mkPen
+from pyqtgraph import GraphicsLayoutWidget, mkPen, ErrorBarItem
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
 from cclib.parser import ccopen
-from pyqtgraph import ErrorBarItem
+
+#debugging
+#pdb.set_trace()
 
 # create Qt application
 qt_app = QApplication(sys.argv)
@@ -36,18 +40,18 @@ class MainWidget(QWidget):
         self.labelList = []
         self.fast = False
 
-        # define & initialize model that will contain Zmatrix data
-        self.model = QStandardItemModel(len(self.inp), 7, self)
-        self.inputField = QTableView(self)
-        self.inputField.setModel(self.model)
-        self.inputField.setFixedWidth(325)
-        self.inputField.installEventFilter(self)
-        self.model.installEventFilter(self)
-        self.model.setHorizontalHeaderLabels(['atom','','bond','','angle','','dihedral'])
+        # define & initialize ZMatModel that will contain Zmatrix data
+        self.ZMatModel = QStandardItemModel(len(self.inp), 7, self)
+        self.ZMatTable = QTableView(self)
+        self.ZMatTable.setModel(self.ZMatModel)
+        self.ZMatTable.setFixedWidth(325)
+        #self.ZMatTable.installEventFilter(self)
+        #self.ZMatModel.installEventFilter(self)
+        self.ZMatModel.setHorizontalHeaderLabels(['atom','','bond','','angle','','dihedral'])
         for j, width in enumerate([40, 22, 65, 22, 65, 22, 65]):
-            self.inputField.setColumnWidth(j, width)
-        # populate the model
-        self.populateModel()
+            self.ZMatTable.setColumnWidth(j, width)
+        # populate the ZMatModel
+        self.populateZMatModel()
 
         #define Menu bar menus and their actions
         self.menuBar = QMenuBar(self)
@@ -132,11 +136,11 @@ class MainWidget(QWidget):
         clearLabelsAction.triggered.connect(self.clearLabels)
         viewMenu.addAction(clearLabelsAction)
 
-        clearBothAction = QAction('&Clear selection and labels', self)
-        clearBothAction.setShortcut('Ctrl+Shift+C')
-        clearBothAction.setStatusTip('Clear highlighted atoms and labels')
-        clearBothAction.triggered.connect(self.clearBoth)
-        viewMenu.addAction(clearBothAction)
+        clearUpdateViewAction = QAction('&Clear selection and labels', self)
+        clearUpdateViewAction.setShortcut('Ctrl+Shift+C')
+        clearUpdateViewAction.setStatusTip('Clear highlighted atoms and labels')
+        clearUpdateViewAction.triggered.connect(self.clearUpdateView)
+        viewMenu.addAction(clearUpdateViewAction)
 
         self.showGaussAction = QAction('Show &Gaussian geometry optimization', self)
         self.showGaussAction.setShortcut('Ctrl+G')
@@ -185,9 +189,27 @@ class MainWidget(QWidget):
         self.gaussianPlot.setWindowTitle('Gaussian geometry optimization')
         #self.gaussianPlot.setAspectLocked(True)
         #self.gaussianPlot.addLayout(rowspan=3, colspan=1)
+
+        self.FreqModel = QStandardItemModel(1, 3, self)
+        self.freqTable = QTableView(self)
+        self.freqTable.setModel(self.FreqModel)
+        self.freqTable.setMinimumWidth(240)
+        self.freqTable.installEventFilter(self)
+        self.FreqModel.installEventFilter(self)
+        self.FreqModel.setHorizontalHeaderLabels(['Frequency','IR Intensity','Raman Intensity'])
+        for j, width in enumerate([80, 80, 80]):
+            self.freqTable.setColumnWidth(j, width)
+
+        self.freqWidget = QWidget()
+        self.freqWidget.setWindowTitle('IR frequency plot & table')
+        self.freqWidget.resize(800, 400)
+        self.freqWidget.layout = QHBoxLayout(self.freqWidget)
+        self.freqWidget.layout.setSpacing(1)
+        self.freqWidget.layout.setContentsMargins(1, 1, 1, 1)
         self.freqPlot = GraphicsLayoutWidget()
-        self.freqPlot.resize(500, 400)
-        self.freqPlot.setWindowTitle('IR frequency plot')
+        self.freqWidget.layout.addWidget(self.freqPlot)
+        self.freqWidget.layout.addWidget(self.freqTable)
+        self.freqTable.clicked.connect(self.freqCellClicked)
 
         # define other application parts
         self.statusBar = QStatusBar(self)
@@ -199,7 +221,7 @@ class MainWidget(QWidget):
         self.layout.setContentsMargins(1, 1, 1, 1)
         self.layout1 = QHBoxLayout()
         self.layout1.setSpacing(1)
-        self.layout1.addWidget(self.inputField)
+        self.layout1.addWidget(self.ZMatTable)
         self.layout1.addWidget(self.window)
         self.layout.addWidget(self.menuBar)
         self.layout.addLayout(self.layout1)
@@ -216,74 +238,82 @@ class MainWidget(QWidget):
         icon.addFile(iconPath, QSize(256, 256))
         self.setWindowIcon(icon)
 
-        # start monitoring changes in the model
-        self.model.dataChanged.connect(self.updateView)
+        # start monitoring changes in the ZMatModel
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
 
     # run and show the application
     def run(self):
         self.show()
-        self.inputField.clicked.connect(self.cellClicked)
+        self.ZMatTable.clicked.connect(self.ZMatCellClicked)
+        qt_app.instance().aboutToQuit.connect(self.deleteGLwidget)
         qt_app.exec_()
 
-    # fill the model with initial data from 'self.inp'
-    def populateModel(self):
-        self.model.removeRows(0, self.model.rowCount())
+    # fill the ZMatModel with initial data from 'self.inp'
+    def populateZMatModel(self):
+        self.ZMatModel.removeRows(0, self.ZMatModel.rowCount())
         for i, row in enumerate(self.inp):
             for j, cell in enumerate(row):
                 item = QStandardItem(str(cell))
-                self.model.setItem(i, j, item)
+                self.ZMatModel.setItem(i, j, item)
         # some cells should not be editable, they are disabled
         for i in range(min(len(self.inp), 3)):
             for j in range(2*i+1, 7):
-                self.model.setItem(i, j, QStandardItem())
-                self.model.item(i, j).setBackground(QColor(150,150,150))
-                self.model.item(i, j).setFlags(Qt.ItemIsEnabled)
+                self.ZMatModel.setItem(i, j, QStandardItem())
+                self.ZMatModel.item(i, j).setBackground(QColor(150,150,150))
+                self.ZMatModel.item(i, j).setFlags(Qt.ItemIsEnabled)
+    
+    def populateFreqModel(self):
+        self.FreqModel.removeRows(0, self.FreqModel.rowCount())
+        for i, row in enumerate(zip(self.vibfreqs, self.vibirs, self. vibramans)):
+            for j, cell in enumerate(row):
+                item = QStandardItem(str(cell))
+                self.FreqModel.setItem(i, j, item)
 
-    # add a row to the bottom of the model
+    # add a row to the bottom of the ZMatModel
     def addRow(self):
         # temporarily stop updating the GL window
-        self.model.dataChanged.disconnect(self.updateView)
-        row = self.model.rowCount()
-        self.model.insertRow(row)
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
+        row = self.ZMatModel.rowCount()
+        self.ZMatModel.insertRow(row)
         # some cells should not be editable
         if row < 3:
             for j in range(2*row+1, 7):
-                self.model.setItem(row, j, QStandardItem())
-                self.model.item(row, j).setBackground(QColor(150,150,150))
-                self.model.item(row, j).setFlags(Qt.ItemIsEnabled)
+                self.ZMatModel.setItem(row, j, QStandardItem())
+                self.ZMatModel.item(row, j).setBackground(QColor(150,150,150))
+                self.ZMatModel.item(row, j).setFlags(Qt.ItemIsEnabled)
         # restart GL window updating
-        self.model.dataChanged.connect(self.updateView)
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.statusBar.clearMessage()
         self.statusBar.showMessage('Added 1 row.', 3000)
 
-    # delete the last row of the model
+    # delete the last row of the ZMatModel
     def deleteRow(self):
         xyz = [list(vi) for vi in list(v)]
         atoms = [str(elements[e]) for e in elems]
-        oldLen = self.model.rowCount()
-        idxs = sorted(set(idx.row() for idx in self.inputField.selectedIndexes()), reverse=True)
+        oldLen = self.ZMatModel.rowCount()
+        idxs = sorted(set(idx.row() for idx in self.ZMatTable.selectedIndexes()), reverse=True)
         newLen = oldLen - len(idxs)
         if newLen == oldLen:
-            self.model.removeRow(self.model.rowCount()-1)
+            self.ZMatModel.removeRow(self.ZMatModel.rowCount()-1)
         else:
-            self.model.dataChanged.disconnect(self.updateView)
+            self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
             for idx in idxs:
-                self.model.removeRow(idx)
+                self.ZMatModel.removeRow(idx)
                 if idx < 3:
                     for i in range(idx, min(3, newLen)):
                         for j in range(2*i+1, 7):
-                            self.model.setItem(i, j, QStandardItem())
-                            self.model.item(i, j).setBackground(QColor(150,150,150))
-                            self.model.item(i, j).setFlags(Qt.ItemIsEnabled)
+                            self.ZMatModel.setItem(i, j, QStandardItem())
+                            self.ZMatModel.item(i, j).setBackground(QColor(150,150,150))
+                            self.ZMatModel.item(i, j).setFlags(Qt.ItemIsEnabled)
                 if len(xyz) > idx:
                     xyz.pop(idx)
                     atoms.pop(idx)
             self.inp = xyz2zmat(xyz, atoms)
-            self.populateModel()
+            self.populateZMatModel()
             for i in reversed(self.highList):
                 self.window.removeItem(i[1])
             self.highList = []
-            self.model.dataChanged.connect(self.updateView)
+            self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.updateView()
         self.statusBar.clearMessage()
         if idxs:
@@ -301,10 +331,10 @@ class MainWidget(QWidget):
 
     # import molecule with zmatrix coordinates
     def readZmat(self):
-        self.model.dataChanged.disconnect(self.updateView)
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
         filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.zmat;;*.*')
         self.inp = []
-        self.populateModel()
+        self.populateZMatModel()
         if filename:
             with open(filename, 'r') as f:
                 next(f)
@@ -312,8 +342,8 @@ class MainWidget(QWidget):
                 for row in f:
                     self.inp.append(row.split())
                 f.close()
-            self.populateModel()
-        self.model.dataChanged.connect(self.updateView)
+            self.populateZMatModel()
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.updateView()
         self.statusBar.clearMessage()
         self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
@@ -322,12 +352,12 @@ class MainWidget(QWidget):
 
     # import molecule with xyz coordinates
     def readXYZ(self):
-        self.model.dataChanged.disconnect(self.updateView)
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
         filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.xyz;;*.*')
         xyz = []
         elems = []
         self.inp = []
-        self.populateModel()
+        self.populateZMatModel()
         if filename:
             with open(filename, 'r') as f:
                 next(f)
@@ -339,9 +369,9 @@ class MainWidget(QWidget):
                         xyz.append([float(f) for f in rs[1:]])
                 f.close()
             self.inp = xyz2zmat(xyz, elems)
-            self.populateModel()
+            self.populateZMatModel()
             #print(elems)
-        self.model.dataChanged.connect(self.updateView)
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.updateView()
         self.statusBar.clearMessage()
         self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
@@ -350,45 +380,32 @@ class MainWidget(QWidget):
 
     # import Gaussian log file
     def readGaussian(self):
-
-        self.model.dataChanged.disconnect(self.updateView)
+        global vsShifted
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
         filename = self.fileDialog.getOpenFileName(self, 'Open file', expanduser('~'), '*.log;;*.*')
         if filename:
             self.gaussianPlot.clear()
             self.inp = []
-            self.populateModel()
+            self.populateZMatModel()
             file = ccopen(filename)
-            data = file.parse()
-            self.natom = data.getattributes()['natom']
-            self.atomnos = data.getattributes()['atomnos'].tolist()
+            data = file.parse().getattributes()
+            self.natom = data['natom']
+            self.atomnos = data['atomnos'].tolist()
             self.atomsymbols = [ str(elements[e]) for e in self.atomnos ]
-            self.atomcoords = data.getattributes()['atomcoords'].tolist()
-            self.scfenergies = data.getattributes()['scfenergies'].tolist()
-            self.geovalues = data.getattributes()['geovalues'].T.tolist()
-            self.geotargets = data.getattributes()['geotargets'].tolist()
-            self.vibfreqs = data.getattributes()['vibfreqs'].tolist()
-            #print(self.vibfreqs)
-            self.vibirs = data.getattributes()['vibirs'].tolist()
-            #print(self.vibirs)
-            self.vibramans = data.getattributes()['vibramans'].tolist()
-            self.vibdisps = data.getattributes()['vibdisps'].tolist()
-            #print(self.vibdisps)
+            self.atomcoords = data['atomcoords'].tolist()
+            self.scfenergies = data['scfenergies'].tolist()
+            self.geovalues = data['geovalues'].T.tolist()
+            self.geotargets = data['geotargets'].tolist()
+            if 'vibfreqs' in data.keys():
+                self.vibfreqs = data['vibfreqs']
+                #print(self.vibfreqs)
+                self.vibirs = data['vibirs']
+                #print(self.vibirs)
+                self.vibramans = data['vibramans']
+                self.vibdisps = data['vibdisps']
+                #print(self.vibdisps)
             self.inp = xyz2zmat(self.atomcoords[0], self.atomsymbols)
-            self.populateModel()
-
-            irPlot = self.freqPlot.addPlot(row=1, col=1)
-            irPlot.clear()
-            minFreq = min(self.vibfreqs)
-            maxFreq = max(self.vibfreqs)
-            maxInt = max(self.vibirs)
-            x = np.linspace(minFreq-100, maxFreq+100, num=2000)
-            y = x*0
-            for f,i in zip(self.vibfreqs, self.vibirs):
-                yi = lorentzv(x, f, 2*np.pi, i)
-                y = y + yi.tolist()
-            irPlot.maxData = irPlot.plot(x, y, antialias=True)
-            markers = ErrorBarItem(x=np.array(self.vibfreqs), y=np.array(self.vibirs), top=maxInt/30, bottom=None, pen='r')
-            irPlot.addItem(markers)
+            self.populateZMatModel()
 
             titles = ['SCF Energies', 'RMS & Max Forces', 'RMS & Max Displacements']
             for i in range(3):
@@ -415,25 +432,50 @@ class MainWidget(QWidget):
                     plot.RMSData.sigPointsClicked.connect(self.gausclicked)
                     plot.setLogMode(y=True)
             self.showGauss()
-            self.showFreq()
             self.updateView()
             self.statusBar.clearMessage()
             self.statusBar.showMessage('Read molecule from '+filename+'.', 5000)
-        if self.natom:
-            self.showGaussAction.setEnabled(True)
-        if self.vibfreqs:
-            self.showFreqAction.setEnabled(True)
-        self.model.dataChanged.connect(self.updateView)
+            self.ZMatModel.dataChanged.connect(self.clearUpdateView)
+            if self.natom:
+                self.showGaussAction.setEnabled(True)
+            if 'vibfreqs' in data.keys():
+                self.showFreqAction.setEnabled(True)
+
+                # populate the FreqModel
+                self.populateFreqModel()
+
+                self.freqPlot.clear()
+                irPlot = self.freqPlot.addPlot(row=1, col=1)
+                irPlot.clear()
+                minFreq = np.min(self.vibfreqs)
+                maxFreq = np.max(self.vibfreqs)
+                maxInt = np.max(self.vibirs)
+                x = np.sort(np.concatenate([np.linspace(minFreq-100, maxFreq+100, num=1000), self.vibfreqs]))
+                y = x*0
+                for f,i in zip(self.vibfreqs, self.vibirs):
+                    y += lorentzv(x, f, 2*np.pi, i)
+                #xy = np.array([np.concatenate([x, np.array(self.vibfreqs)]), np.concatenate([y, np.array(self.vibirs)])]).T
+                #xysort = xy[xy[:,0].argsort()]
+                irPlot.maxData = irPlot.plot(x, y, antialias=True)
+                markers = ErrorBarItem(x=self.vibfreqs, y=self.vibirs, top=maxInt/30, bottom=None, pen='r')
+                irPlot.addItem(markers)
+                self.showFreq()
+                #self.vibdisps = np.append(self.vibdisps, [np.mean(self.vibdisps, axis=0)], axis=0)
+                maxt = 100
+                vsShifted = np.array([ [ vs + self.vibdisps[i]*np.sin(t*2*np.pi/maxt)/3 for t in range(maxt) ] for i in range(len(self.vibfreqs)) ])
+            else:
+                self.showFreqAction.setEnabled(False)
+                self.freqWidget.hide()
 
     def showGauss(self):
         self.gaussianPlot.show()
 
     def showFreq(self):
-        self.freqPlot.show()
+        self.freqWidget.show()
 
     # export Zmatrix to csv
     def writeZmat(self):
-        zm = model2list(self.model)
+        zm = model2list(self.ZMatModel)
         filename = self.fileDialog.getSaveFileName(self, 'Save file', expanduser('~')+'/'+getFormula(list(list(zip(*zm))[0]))+'.zmat', '*.zmat;;*.*')
         try:
             filename
@@ -448,7 +490,7 @@ class MainWidget(QWidget):
     # export XYZ coordinates to csv
     def writeXYZ(self):
         xyz = []
-        zm = model2list(self.model)
+        zm = model2list(self.ZMatModel)
         for i in range(len(v)):
             xyz.append(np.round(v[i], 7).tolist())
             xyz[i][:0] = zm[i][0]
@@ -475,7 +517,7 @@ class MainWidget(QWidget):
         global vs
         global elems
         global nelems
-        data = model2list(self.model)
+        data = model2list(self.ZMatModel)
         try:
             # create a list with element coordinates
             v = zmat2xyz(data)
@@ -502,10 +544,19 @@ class MainWidget(QWidget):
                 for i in range(nelems):
                     addAtom(self.window, i, r, vs, c, fast=self.fast)
                     self.atomList.append([i, self.window.items[-1]])
+                #print(self.atomList)
                 # draw bonds where appropriate
-                combs = itertools.combinations(range(nelems), 2)
+                combs = list(itertools.combinations(range(nelems), 2))
+                bonds = []
                 for i in combs:
-                    addBond(self.window, i[0], i[1], r, vs, c, fast=self.fast)
+                    bonds.append(addBond(self.window, i[0], i[1], r, vs, c, fast=self.fast))
+                if self.fast:
+                    bondedAtoms = set(filter((None).__ne__, flatten(bonds)))
+                    for i in set(range(nelems)) - bondedAtoms:
+                        addUnbonded(self.window, i, vs, c)
+                        self.atomList[i][1]=self.window.items[-1]
+                    #print(self.atomList)
+
                 for i in self.highList:
                     self.window.addItem(i[1])
                 for i in self.labelList:
@@ -519,6 +570,29 @@ class MainWidget(QWidget):
         else: maxDim = 2
         self.window.setCameraPosition(distance=maxDim*1.5+1)
 
+    global index
+    index = 0
+    def updateFreq(self):
+        global vsShifted, index, r, c
+        index += 1
+        index = index % len(vsShifted[0])
+        #print(index)
+        #print(vsShifted[index])
+        for item in reversed(self.window.items):
+            self.window.removeItem(item)
+        for i in range(nelems):
+            addAtom(self.window, i, r, vsShifted[self.freqIndex, index], c, fast=self.fast)
+            self.atomList.append([i, self.window.items[-1]])
+        combs = itertools.combinations(range(nelems), 2)
+        bonds = []
+        for i in combs:
+            bonds.append(addBond(self.window, i[0], i[1], r, vsShifted[self.freqIndex, index], c, fast=self.fast))
+        if self.fast:
+            bondedAtoms = set(filter((None).__ne__, flatten(bonds)))
+            for i in set(range(nelems)) - bondedAtoms:
+                addUnbonded(self.window, i, vsShifted[self.freqIndex, index], c)
+                self.atomList[i][1]=self.window.items[-1]
+
     # detect mouse clicks in GL window and process them
     def eventFilter(self, obj, event):
         if obj == self.window:
@@ -531,8 +605,8 @@ class MainWidget(QWidget):
         # also do the default click action
         return super(MainWidget, self).eventFilter(obj, event)
 
-    def cellClicked(self):
-        idxs = sorted(set(idx.row() for idx in self.inputField.selectedIndexes()), reverse=True)
+    def ZMatCellClicked(self):
+        idxs = sorted(set(idx.row() for idx in self.ZMatTable.selectedIndexes()), reverse=True)
         itms = []
         if self.highList:
             highIdx = list(np.array(self.highList).T[0])
@@ -542,6 +616,28 @@ class MainWidget(QWidget):
             elif len(self.atomList) > idx:
                 itms.append(self.atomList[idx][1])
         self.highlight(self.window, itms)
+
+    def freqCellClicked(self):
+        global vsShifted
+        self.timer = QTimer()
+        self.timer.setInterval(30)
+        self.timer.timeout.connect(self.updateFreq)
+        idxs = [ idx.row() for idx in self.freqTable.selectedIndexes() ]
+        if len(idxs) == 1:
+            self.freqIndex = idxs[0]
+            self.timer.stop()
+            self.timer.timeout.connect(self.updateFreq)
+            try:
+                self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
+            except TypeError:
+                pass
+            self.timer.start()
+        if len(idxs) != 1:
+            self.timer.stop()
+            self.freqTable.clearSelection()
+            self.timer.timeout.disconnect(self.updateFreq)
+            self.ZMatModel.dataChanged.connect(self.clearUpdateView)
+            self.clearUpdateView()
 
     def gausclicked(self, item, point):
         itemdata = item.scatter.data
@@ -557,26 +653,27 @@ class MainWidget(QWidget):
             plot = self.gaussianPlot.getItem(1, i+1)
             plot.removeItem(plot.highlight)
             plot.highlight=plot.plot(x, y, symbol='o', symbolPen='w', symbolBrush=None, pen=None, symbolSize=15, pxMode=True, antialias=True, autoDownsample=False)
-        self.model.dataChanged.disconnect(self.updateView)
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
         self.inp = []
-        self.populateModel()
+        self.populateZMatModel()
         self.inp = xyz2zmat(self.atomcoords[min(idx, len(self.atomcoords)-1)], self.atomsymbols)
-        self.populateModel()
-        self.model.dataChanged.connect(self.updateView)
+        self.populateZMatModel()
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.updateView()
 
     def highlight(self, obj, itms):
         for itm in itms:
             idx = next((i for i, sublist in enumerate(self.atomList) if itm in sublist), -1)
+            #print(idx)
             if idx != -1:
                 addAtom(obj, idx, r, vs, c, opt='highlight', fast=self.fast)
                 self.highList.append([idx, obj.items[-1]])
-                self.inputField.selectRow(idx)
+                self.ZMatTable.selectRow(idx)
             idx = next((i for i, sublist in enumerate(self.highList) if itm in sublist), -1)
             if idx != -1:
                 obj.removeItem(self.highList[idx][1])
                 self.highList.pop(idx)
-                self.inputField.clearSelection()
+                self.ZMatTable.clearSelection()
         self.statusBar.clearMessage()
         if len(self.highList) > 0:
             idxs = np.asarray(self.highList).T[0]
@@ -604,9 +701,9 @@ class MainWidget(QWidget):
 
     def build(self):
         selection = self.periodicTable()
-        row = self.model.rowCount()
+        row = self.ZMatModel.rowCount()
         self.addRow()
-        self.model.dataChanged.disconnect(self.updateView)
+        self.ZMatModel.dataChanged.disconnect(self.clearUpdateView)
         newSymbol = selection[1]
         newData = [newSymbol]
         if len(self.highList) >= 1:
@@ -623,9 +720,9 @@ class MainWidget(QWidget):
                     newData.append(newDihedral)
         for j, cell in enumerate(newData):
             item = QStandardItem(str(cell))
-            self.model.setItem(row, j, item)
+            self.ZMatModel.setItem(row, j, item)
         self.highList = []
-        self.model.dataChanged.connect(self.updateView)
+        self.ZMatModel.dataChanged.connect(self.clearUpdateView)
         self.updateView()
 
     def measureDistanceB(self):
@@ -698,17 +795,20 @@ class MainWidget(QWidget):
         self.updateView()
 
     def clearHighlights(self):
-        self.highList = []
         for item in reversed(self.highList):
                 self.window.removeItem(item[1])
+        self.highList = []
         self.updateView()
 
-    def clearBoth(self):
+    def clearUpdateView(self):
         self.window.labelPos = []
         self.window.labelText = []
-        self.highList = []
         self.labelList = []
+        for item in reversed(self.highList):
+                self.window.removeItem(item[1])
+        self.highList = []
         self.updateView()
+        #print(self.highList)
 
     def fastDraw(self):
         if not self.fast:
@@ -721,10 +821,15 @@ class MainWidget(QWidget):
             self.updateView()
 
     def about(self):
-        QMessageBox.about(self, 'About moldy', 'moldy alpha 22. 12. 2014')
+        QMessageBox.about(self, 'About moldy', 'moldy beta 10. 9. 2015')
 
     def aboutQt(self):
         QMessageBox.aboutQt(self, 'About Qt')
+
+    def deleteGLwidget(self):
+        self.window.setParent(None)
+        del self.window
+
 
 # run the application
 app = MainWidget()

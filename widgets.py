@@ -34,6 +34,23 @@ from pyhmsa.util.element_properties import get_symbol, get_atomic_number
 
 from cclib.parser import ccopen
 
+# PyInstaller external file fix
+from os.path import join
+from os import chdir
+filename = 'colors.csv'
+# uncomment for PyInstaller compilation
+#if hasattr(sys, '_MEIPASS'):
+    ## PyInstaller >= 1.6
+    #chdir(sys._MEIPASS)
+    #filename = join(sys._MEIPASS, filename)
+#elif '_MEIPASS2' in environ:
+    ## PyInstaller < 1.6 (tested on 1.5 only)
+    #chdir(environ['_MEIPASS2'])
+    #filename = join(environ['_MEIPASS2'], filename)
+#else:
+    #chdir(dirname(sys.argv[0]))
+    #filename = join(dirname(sys.argv[0]), filename)
+
 class ElementPushButton(QPushButton):
     def __init__(self, atomic_number, parent=None):
         QPushButton.__init__(self, parent)

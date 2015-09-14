@@ -18,24 +18,36 @@ with open('colors.csv') as csvfile:
 def addAtom(w, i, r, vs, c, opt='', fast=False):
     if fast:
         r2 = .1
+        ms = gl.MeshData.sphere(rows=2, cols=3, radius=r2)
         if opt == 'highlight':
             r2 += .05
-        ms = gl.MeshData.sphere(rows=10, cols=10, radius=r2)
-        gs = gl.GLMeshItem(meshdata=ms, smooth=False, drawFaces=True, color=((1, 1, 1, 0) if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, glOptions='translucent')
+            ms = gl.MeshData.sphere(rows=2, cols=3, radius=r2)
+            gs = gl.GLMeshItem(meshdata=ms, smooth=False, drawFaces=True, color=(0, 1, .2, 0), drawEdges=False)
+        else:
+            gs = gl.GLMeshItem(meshdata=ms, smooth=False, drawFaces=True, color=(1,1,1,0), drawEdges=False, glOptions="translucent")
+        gs.translate(vs[i][0], vs[i][1], vs[i][2])
+        w.addItem(gs)
     else:
         r2 = r[i]*.6
         if opt == 'highlight':
             r2 += .05
         ms = gl.MeshData.sphere(rows=10, cols=20, radius=r2)
         gs = gl.GLMeshItem(meshdata=ms, smooth=True, drawFaces=True, color=(c[i] if opt != 'highlight' else (0, 1, .2, .5)), drawEdges=False, shader='shaded', glOptions=('opaque' if opt != 'highlight' else 'translucent'))
-    gs.translate(vs[i][0], vs[i][1], vs[i][2])
-    w.addItem(gs)
+        gs.translate(vs[i][0], vs[i][1], vs[i][2])
+        w.addItem(gs)
+
+def addUnbonded(w, i, vs, c):
+        r2 = .12
+        ms = gl.MeshData.sphere(rows=2, cols=3, radius=r2)
+        gs = gl.GLMeshItem(meshdata=ms, smooth=False, drawFaces=True, color=c[i], drawEdges=False)
+        gs.translate(vs[i][0], vs[i][1], vs[i][2])
+        w.addItem(gs)
 
 # draw bonds between atoms in GL window;
 # max bond length is configurable with maxLen
 def addBond(w, i, j, r, vs, c, fast=False):
     l = np.linalg.norm(np.array(vs[i])-np.array(vs[j]))
-    maxLen = (r[i]+r[j])*1.2
+    maxLen = (r[i]+r[j])*1.25
     if l < maxLen:
         # convert coordinates from cartesian to spherical
         xyz = np.add(vs[j], -vs[i])
@@ -75,6 +87,7 @@ def addBond(w, i, j, r, vs, c, fast=False):
                 gc2.rotate(s2, 0, 0, 1)
                 gc2.translate(vs[j][0], vs[j][1], vs[j][2])
             w.addItem(gc2)
+        return [i, j]
 
 # flatten a nested list
 def flatten(container):

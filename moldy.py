@@ -8,11 +8,12 @@ import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
 from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar, QMenu
-from pyqtgraph import GraphicsLayoutWidget, mkPen, ErrorBarItem
+from pyqtgraph import GraphicsLayoutWidget, mkPen
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
 from cclib.parser import ccopen
+from pyqtgraph import ErrorBarItem
 
 #debugging
 #pdb.set_trace()
@@ -264,7 +265,7 @@ class MainWidget(QWidget):
     
     def populateFreqModel(self):
         self.FreqModel.removeRows(0, self.FreqModel.rowCount())
-        for i, row in enumerate(zip(self.vibfreqs, self.vibirs, self. vibramans)):
+        for i, row in enumerate(zip(self.vibfreqs, self.vibirs, self.vibramans)):
             for j, cell in enumerate(row):
                 item = QStandardItem(str(cell))
                 self.FreqModel.setItem(i, j, item)
@@ -401,7 +402,11 @@ class MainWidget(QWidget):
                 #print(self.vibfreqs)
                 self.vibirs = data['vibirs']
                 #print(self.vibirs)
-                self.vibramans = data['vibramans']
+                #print(data.keys())
+                if 'vibramans' in data.keys():
+                    self.vibramans = data['vibramans']
+                else:
+                    self.vibramans = [''] * len(self.vibirs)
                 self.vibdisps = data['vibdisps']
                 #print(self.vibdisps)
             self.inp = xyz2zmat(self.atomcoords[0], self.atomsymbols)
@@ -821,7 +826,7 @@ class MainWidget(QWidget):
             self.updateView()
 
     def about(self):
-        QMessageBox.about(self, 'About moldy', 'moldy beta 10. 9. 2015')
+        QMessageBox.about(self, 'About moldy', 'moldy alpha 22. 12. 2014')
 
     def aboutQt(self):
         QMessageBox.aboutQt(self, 'About Qt')

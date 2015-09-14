@@ -5,4 +5,7 @@ Prerequisites:
 * [cclib 1.3.1+](http://cclib.github.io/)
 * [prettytable 0.7.2+](https://pypi.python.org/pypi/PrettyTable)
 * [PyQt4 4.11.3+](https://pypi.python.org/pypi/PyQt4)
-* [scipy 0.15.0](http://www.scipy.org/)
+* [scipy 0.15.0+](http://www.scipy.org/)
+
+Screenshot:
+![Main window](http://i.imgur.com/Ci8goik.png)

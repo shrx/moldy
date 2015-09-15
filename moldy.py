@@ -8,12 +8,11 @@ import sys
 from os.path import expanduser
 from PyQt4.QtCore import *
 from PyQt4.Qt import QApplication, QWidget, QTableView, QStandardItem, QStandardItemModel, QColor, QFileDialog, QHBoxLayout, QVBoxLayout, QStatusBar, QAction, qApp, QMessageBox, QIcon, QMenuBar, QMenu
-from pyqtgraph import GraphicsLayoutWidget, mkPen
+from pyqtgraph import GraphicsLayoutWidget, mkPen, ErrorBarItem
 import pyqtgraph.opengl as gl
 from zmat import ZMError
 from utils import *
 from cclib.parser import ccopen
-from pyqtgraph import ErrorBarItem
 
 #debugging
 #pdb.set_trace()
@@ -826,7 +825,7 @@ class MainWidget(QWidget):
             self.updateView()
 
     def about(self):
-        QMessageBox.about(self, 'About moldy', 'moldy alpha 22. 12. 2014')
+        QMessageBox.about(self, 'About moldy', 'moldy beta 15. 9. 2015')
 
     def aboutQt(self):
         QMessageBox.aboutQt(self, 'About Qt')
